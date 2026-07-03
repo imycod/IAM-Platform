@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>flow-admin · 回调</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    .err { color: #c00; }
+  </style>
+</head>
+<body>
+  <h1>正在完成登录…</h1>
+  <p id="msg">交换 access_token 中</p>
+
+  <script src="config.js"></script>
+  <script src="oidc.js"></script>
+  <script>
+    (async function () {
+      const cfg = window.FLOW_ADMIN_CONFIG;
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      const error = params.get('error');
+
+      if (error) {
+        document.getElementById('msg').innerHTML =
+          '<span class="err">授权失败: ' + error + '</span>';
+        return;
+      }
+
+      const saved = FlowAdminOidc.getSavedState();
+      if (!state || state !== saved) {
+        document.getElementById('msg').innerHTML =
+          '<span class="err">state 校验失败</span>';
+        return;
+      }
+      FlowAdminOidc.clearSavedState();
+
+      if (!code) {
+        document.getElementById('msg').innerHTML =
+          '<span class="err">缺少 authorization code</span>';
+        return;
+      }
+
+      try {
+        await FlowAdminOidc.exchangeCode(cfg, code);
+        window.location.replace('app.html');
+      } catch (e) {
+        document.getElementById('msg').innerHTML =
+          '<span class="err">' + (e.message || e) + '</span>';
+      }
+    })();
+  </script>
+</body>
+</html>

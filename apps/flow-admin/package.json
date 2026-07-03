@@ -1,0 +1,8 @@
+{
+  "name": "flow-admin-demo",
+  "private": true,
+  "description": "flow-admin OIDC SSO static demo (no framework)",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}

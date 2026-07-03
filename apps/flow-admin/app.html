@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>flow-admin · 已登录</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 16px;
+      line-height: 1.5;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      margin-top: 24px;
+    }
+
+    pre {
+      background: #f6f8fa;
+      padding: 12px;
+      overflow: auto;
+      font-size: 0.85rem;
+      border-radius: 6px;
+    }
+
+    ul {
+      padding-left: 1.2rem;
+    }
+
+    button {
+      margin-right: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    .err {
+      color: #c00;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>flow-admin 工作台</h1>
+  <p class="muted">OIDC access_token 已获取，下方为 IAM 返回的权限与可见菜单</p>
+  <button id="btn-refresh" type="button">刷新</button>
+  <button id="btn-logout" type="button">退出</button>
+
+  <h2>UserInfo（/oidc/me）</h2>
+  <pre id="userinfo">加载中…</pre>
+
+  <h2>我的权限（GET /api/me/permissions）</h2>
+  <pre id="permissions">加载中…</pre>
+
+  <h2>可见菜单（GET /api/me/menus?tree=true）</h2>
+  <ul id="menus"></ul>
+
+  <h2>业务 API 范例（GET /api/applications/:id/tasks/demo）</h2>
+  <p class="muted">需 application_user + flow_admin:tasks:view 权限</p>
+  <pre id="tasks-demo">加载中…</pre>
+
+  <p id="error" class="err"></p>
+
+  <script src="config.js"></script>
+  <script src="oidc.js"></script>
+  <script>
+    const cfg = window.FLOW_ADMIN_CONFIG;
+
+    async function load() {
+      const tokens = FlowAdminOidc.getTokens();
+      if (!tokens?.access_token) {
+        window.location.replace('index.html');
+        return;
+      }
+
+      const token = tokens.access_token;
+      document.getElementById('error').textContent = '';
+
+      try {
+        const userinfo = await FlowAdminOidc.fetchUserInfo(cfg, token);
+        document.getElementById('userinfo').textContent = JSON.stringify(userinfo, null, 2);
+
+        const perms = await FlowAdminOidc.fetchIamApi(
+          cfg,
+          '/me/permissions?applicationId=' + encodeURIComponent(cfg.applicationId),
+          token,
+        );
+        document.getElementById('permissions').textContent = JSON.stringify(perms, null, 2);
+
+        const menus = await FlowAdminOidc.fetchIamApi(
+          cfg,
+          '/me/menus?applicationId=' + encodeURIComponent(cfg.applicationId) + '&tree=true',
+          token,
+        );
+        const ul = document.getElementById('menus');
+        ul.innerHTML = '';
+        (menus || []).forEach(function (m) {
+          const li = document.createElement('li');
+          li.textContent = m.name + ' → ' + (m.path || '') +
+            (m.permissionCode ? ' [' + m.permissionCode + ']' : '');
+          ul.appendChild(li);
+        });
+
+        const tasks = await FlowAdminOidc.fetchIamApi(
+          cfg,
+          '/applications/' + encodeURIComponent(cfg.applicationId) + '/tasks/demo',
+          token,
+        );
+        document.getElementById('tasks-demo').textContent = JSON.stringify(tasks, null, 2);
+      } catch (e) {
+        document.getElementById('error').textContent = e.message || String(e);
+      }
+    }
+
+    document.getElementById('btn-refresh').addEventListener('click', load);
+    document.getElementById('btn-logout').addEventListener('click', function () {
+      FlowAdminOidc.clearSession();
+      window.location.replace('index.html');
+    });
+
+    load();
+  </script>
+</body>
+
+</html>

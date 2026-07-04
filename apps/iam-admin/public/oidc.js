@@ -147,6 +147,33 @@
     clearAllPkceState();
   }
 
+  function clearPortalSession() {
+    clearSession();
+    document.cookie = "authorized-token=; Max-Age=0; path=/";
+    document.cookie = "multiple-tabs=; Max-Age=0; path=/";
+    localStorage.removeItem("user-info");
+  }
+
+  function resolvePostLogoutRedirectUri(cfg) {
+    return cfg.postLogoutRedirectUri || `${window.location.origin}/logout.html`;
+  }
+
+  function buildEndSessionUrl(cfg) {
+    const tokens = getTokens();
+    const params = new URLSearchParams({
+      client_id: cfg.clientId,
+      post_logout_redirect_uri: resolvePostLogoutRedirectUri(cfg)
+    });
+    if (tokens && tokens.id_token) {
+      params.set("id_token_hint", tokens.id_token);
+    }
+    return `${cfg.oidcIssuer}/session/end?${params.toString()}`;
+  }
+
+  function performGlobalLogout(cfg) {
+    window.location.href = buildEndSessionUrl(cfg);
+  }
+
   function getSavedState() {
     return pkceStore().getItem(STORAGE_STATE);
   }
@@ -211,6 +238,7 @@
       permissions: bootstrap.permissions || []
     };
     localStorage.setItem("user-info", JSON.stringify(userInfo));
+    sessionStorage.setItem("iam_sso_login_at", String(Date.now()));
   }
 
   global.IamClientOidc = {
@@ -218,6 +246,9 @@
     exchangeCode,
     getTokens,
     clearSession,
+    clearPortalSession,
+    buildEndSessionUrl,
+    performGlobalLogout,
     getSavedState,
     hasPendingAuth,
     clearSavedState,

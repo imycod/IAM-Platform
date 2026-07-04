@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { Provider as OidcProvider } from 'oidc-provider';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { dynamicImport } from '@app/common';
 import type { AppConfig } from '@app/config';
 import type { IOidcInteraction, OidcInteractionDetails, OidcLoginResult } from '@app/contracts';
@@ -61,7 +61,11 @@ export class OidcService implements IOidcInteraction {
     const clients = await this.oauthClientService.toOidcClients();
     return JSON.stringify(
       clients
-        .map((c) => ({ id: c.client_id, uris: c.redirect_uris.sort() }))
+        .map((c) => ({
+          id: c.client_id,
+          uris: c.redirect_uris.sort(),
+          postLogout: (c.post_logout_redirect_uris ?? []).sort(),
+        }))
         .sort((a, b) => a.id.localeCompare(b.id)),
     );
   }
@@ -106,6 +110,28 @@ export class OidcService implements IOidcInteraction {
         devInteractions: { enabled: false },
         revocation: { enabled: true },
         introspection: { enabled: true },
+        rpInitiatedLogout: {
+          enabled: true,
+          logoutSource: async (
+            ctx: { type: string; body: string },
+            form: string,
+          ) => {
+            ctx.type = 'html';
+            ctx.body = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>正在退出统一登录…</title>
+</head>
+<body>
+  ${form}
+  <input type="hidden" name="logout" value="yes" form="op.logoutForm">
+  <script>document.getElementById('op.logoutForm').submit();</script>
+</body>
+</html>`;
+          },
+        },
       },
       cookies: { keys: cookieKeys },
       /**
@@ -198,6 +224,7 @@ export class OidcService implements IOidcInteraction {
     });
     this.provider.proxy = true;
     this.attachLoginAuditListeners(this.provider);
+    this.attachLogoutListeners(this.provider);
     this.logger.log(
       `node-oidc-provider 已初始化, issuer=${issuer}, clients=${clients
         .map((c) => c.client_id)
@@ -222,6 +249,54 @@ export class OidcService implements IOidcInteraction {
     provider.on('grant.success', (ctx: OidcGrantContext) => {
       void this.recordGrantClientMeta(ctx);
     });
+  }
+
+  /** 全局登出成功后广播事件，供其它 SPA Tab 感知 SSO 会话已销毁 */
+  private attachLogoutListeners(provider: OidcProvider): void {
+    provider.on(
+      'end_session.success',
+      (ctx: {
+        req?: Request;
+        res?: Response;
+        oidc?: {
+          params?: { client_id?: string };
+          session?: { state?: { clientId?: string } };
+          client?: { clientId?: string };
+        };
+      }) => {
+        const res = ctx.res;
+        if (!res) {
+          return;
+        }
+        const clientId =
+          ctx.oidc?.session?.state?.clientId ??
+          ctx.oidc?.params?.client_id ??
+          ctx.oidc?.client?.clientId ??
+          '';
+        this.setSsoLogoutEventCookie(res, ctx.req, clientId);
+      },
+    );
+  }
+
+  private setSsoLogoutEventCookie(res: Response, req: Request | undefined, clientId: string): void {
+    const value = `${Date.now()}:${clientId}`;
+    const host = req?.headers?.host?.split(':')[0] ?? '';
+    const cookieOpts = {
+      maxAge: 60_000,
+      path: '/',
+      sameSite: 'lax' as const,
+      httpOnly: false,
+      ...(host.endsWith('iam.local') ? { domain: '.iam.local' } : {}),
+    };
+    if (typeof res.cookie === 'function') {
+      res.cookie('iam_sso_logout_event', value, cookieOpts);
+      return;
+    }
+    let header = `iam_sso_logout_event=${encodeURIComponent(value)}; Max-Age=60; Path=/; SameSite=Lax`;
+    if (host.endsWith('iam.local')) {
+      header += '; Domain=.iam.local';
+    }
+    res.setHeader('Set-Cookie', header);
   }
 
   /** 授权码换 token 时记录客户端 IP（AccessToken 在此时才生成）。 */

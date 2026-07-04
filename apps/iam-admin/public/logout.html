@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iam-client · 退出登录</title>
+</head>
+
+<body>
+  <p>正在完成退出…</p>
+  <script src="config.js"></script>
+  <script src="oidc.js"></script>
+  <script>
+    IamClientOidc.clearPortalSession();
+    window.location.replace("/#/login");
+  </script>
+</body>
+
+</html>

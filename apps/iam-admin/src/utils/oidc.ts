@@ -47,6 +47,7 @@ const STORAGE_VERIFIER_PREFIX = "iam_client_pkce_verifier:";
 const STORAGE_SILENT_PREFIX = "iam_client_oidc_silent:";
 const STORAGE_STATE = "iam_client_oauth_state";
 const REDIRECT_LOCK = "iam_client_oidc_redirecting";
+const STORAGE_TOKENS = "iam_client_oidc_tokens";
 const SKIP_SSO_KEY = "iam_client_skip_auto_sso";
 const REDIRECT_LOCK_TTL_MS = 120_000;
 
@@ -207,6 +208,48 @@ export function clearOidcPkceState(): void {
     }
   }
   keysToRemove.forEach(k => store.removeItem(k));
+}
+
+export function resolvePostLogoutRedirectUri(
+  cfg: IamClientConfig = IAM_CLIENT_CONFIG
+): string {
+  return `${window.location.origin}/logout.html`;
+}
+
+export function getStoredOidcTokens(): {
+  id_token?: string;
+  access_token?: string;
+} | null {
+  const raw = localStorage.getItem(STORAGE_TOKENS);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as { id_token?: string; access_token?: string };
+  } catch {
+    return null;
+  }
+}
+
+/** 仅清本应用 SSO 本地会话（不触发 IdP 登出） */
+export function clearLocalSsoSession(): void {
+  localStorage.removeItem(STORAGE_TOKENS);
+  clearOidcPkceState();
+}
+
+/** RP-Initiated Logout：销毁 IdP SSO 会话并通知其它已登录应用 */
+export function performGlobalLogout(
+  cfg: IamClientConfig = IAM_CLIENT_CONFIG
+): void {
+  const tokens = getStoredOidcTokens();
+  const params = new URLSearchParams({
+    client_id: cfg.clientId,
+    post_logout_redirect_uri: resolvePostLogoutRedirectUri(cfg)
+  });
+  if (tokens?.id_token) {
+    params.set("id_token_hint", tokens.id_token);
+  }
+  window.location.href = `${cfg.oidcIssuer}/session/end?${params.toString()}`;
 }
 
 /**

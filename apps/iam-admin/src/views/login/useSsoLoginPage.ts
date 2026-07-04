@@ -10,6 +10,7 @@ import {
   startOidcLogin,
   trySilentOidcLogin
 } from "@/utils/oidc";
+import { markSsoLoginComplete } from "@/utils/sso-logout-sync";
 
 export type SsoLoginPhase = "probing" | "entering" | "ready";
 
@@ -89,6 +90,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
       return;
     }
     if (hasLocalSession()) {
+      markSsoLoginComplete();
       onEnterApp();
       return;
     }
@@ -120,6 +122,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
     window.addEventListener("focus", onTabVisible);
 
     if (hasLocalSession()) {
+      markSsoLoginComplete();
       onEnterApp();
       return;
     }

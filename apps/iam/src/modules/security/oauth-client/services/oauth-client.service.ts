@@ -13,11 +13,17 @@ import { CreateOauthClientDto } from '../dto/create-oauth-client.dto';
 import { UpdateOauthClientDto } from '../dto/update-oauth-client.dto';
 import { QueryOauthClientDto } from '../dto/query-oauth-client.dto';
 import type { OauthClientDetailDto } from '../dto/oauth-client-detail.dto';
+import {
+  frontchannelLogoutUri,
+  postLogoutRedirectUris,
+} from '../utils/oauth-logout-uri.util';
 
 export interface OidcClientMetadata {
   client_id: string;
   client_secret?: string;
   redirect_uris: string[];
+  post_logout_redirect_uris?: string[];
+  frontchannel_logout_uri?: string;
   grant_types: string[];
   response_types: string[];
   scope: string;
@@ -190,10 +196,14 @@ export class OauthClientService {
   async toOidcClients(): Promise<OidcClientMetadata[]> {
     const clients = await this.repo.find();
     return clients.map((c) => {
+      const postLogoutUris = postLogoutRedirectUris(c.redirectUris);
+      const frontchannelUri = frontchannelLogoutUri(c.redirectUris);
       const meta: OidcClientMetadata = {
         client_id: c.clientId,
         client_secret: c.clientSecret,
         redirect_uris: c.redirectUris,
+        post_logout_redirect_uris: postLogoutUris,
+        ...(frontchannelUri ? { frontchannel_logout_uri: frontchannelUri } : {}),
         grant_types: c.grantTypes,
         response_types: c.responseTypes as string[],
         scope: c.scopes.join(' '),

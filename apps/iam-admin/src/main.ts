@@ -2,6 +2,8 @@ import App from "./App.vue";
 import router from "./router";
 import { setupStore } from "@/store";
 import { getPlatformConfig } from "./config";
+import { setupSsoLogoutSync } from "@/utils/sso-logout-sync";
+import { useUserStoreHook } from "@/store/modules/user";
 import { MotionPlugin } from "@vueuse/motion";
 // import { useEcharts } from "@/plugins/echarts";
 import { createApp, type Directive } from "vue";
@@ -56,6 +58,9 @@ getPlatformConfig(app).then(async config => {
   setupStore(app);
   app.use(router);
   await router.isReady();
+  setupSsoLogoutSync(() => {
+    useUserStoreHook().logOutLocal();
+  });
   injectResponsiveStorage(app, config);
   app.use(MotionPlugin).use(useElementPlus).use(Table);
   // .use(PureDescriptions)

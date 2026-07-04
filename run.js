@@ -52,7 +52,7 @@ function shutdown() {
 }
 
 async function main() {
-  // start('iam-backend', 'pnpm', ['run', 'start:dev::nginx'], root);
+  start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root);
   await sleep(3000);
 
   start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root);

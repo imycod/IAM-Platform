@@ -15,7 +15,11 @@ import {
 } from "@/api/user";
 import { useMultiTagsStoreHook } from "./multiTags";
 import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
-import { clearOidcPkceState } from "@/utils/oidc";
+import {
+  clearLocalSsoSession,
+  clearOidcPkceState,
+  performGlobalLogout
+} from "@/utils/oidc";
 
 export const useUserStore = defineStore("pure-user", {
   state: (): userType => ({
@@ -77,16 +81,21 @@ export const useUserStore = defineStore("pure-user", {
           });
       });
     },
-    /** 前端登出（不调用接口） */
-    logOut() {
+    /** 本地登出（IdP 已全局登出或其它 Tab 触发） */
+    logOutLocal() {
       this.username = "";
       this.roles = [];
       this.permissions = [];
       removeToken();
+      clearLocalSsoSession();
       clearOidcPkceState();
       useMultiTagsStoreHook().handleTags("equal", [...routerArrays]);
       resetRouter();
       router.push("/login");
+    },
+    /** 全局 SSO 登出：跳转 IdP end_session，销毁统一会话 */
+    logOut() {
+      performGlobalLogout();
     },
     /** 刷新`token` */
     async handRefreshToken(data) {

@@ -29,6 +29,7 @@
     "seed:iam-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-data.ts",
     "seed:iam-admin-application": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-application-data.ts",
     "seed:iam-admin-identity": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-identity-data.ts",
+    "seed:iam-admin-organization": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-organization-data.ts",
     "seed:iam-admin-security": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-security-data.ts",
     "seed:assign-iam-admin-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/assign-iam-admin-admin-role.ts",
     "seed:oauth-iam-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/oauth-iam-admin.ts",

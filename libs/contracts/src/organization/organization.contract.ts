@@ -15,6 +15,12 @@ export interface IOrganizationQuery {
   /** 用户能管辖的部门 id 列表（含下级），供数据权限判定使用。 */
   getManagedDepartmentIds(userId: string): Promise<string[]>;
 
+  /**
+   * 用户可访问的部门 id 列表。
+   * includeSubtree=false → 仅所属部门；true → 所属部门及子部门 + 作为负责人的部门树。
+   */
+  getAccessibleDepartmentIds(userId: string, includeSubtree: boolean): Promise<string[]>;
+
   /** 用户的组织上下文（所属组织/部门/岗位）。 */
   getUserOrgContext(userId: string): Promise<UserOrgContext | null>;
 }

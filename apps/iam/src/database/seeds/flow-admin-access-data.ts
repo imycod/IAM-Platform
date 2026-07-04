@@ -25,8 +25,33 @@ const CREDENTIAL_PROVIDER = 'credential';
 
 const MANAGER_ROLE_CODE = 'flow_admin:manager';
 const VIEWER_ROLE_CODE = 'flow_admin:viewer';
-const TASK_RESOURCE = 'flow_admin:tasks';
-const TASK_PERMISSION_CODE = 'flow_admin:tasks:view';
+
+const FLOW_RESOURCES = {
+  products: 'flow_admin:products',
+  materials: 'flow_admin:materials',
+  tasks: 'flow_admin:tasks',
+} as const;
+
+const FLOW_VIEW_PERMISSIONS = [
+  {
+    name: '流程管理产品列表',
+    code: 'flow_admin:products:view',
+    resource: FLOW_RESOURCES.products,
+    action: 'view',
+  },
+  {
+    name: '流程管理素材列表',
+    code: 'flow_admin:materials:view',
+    resource: FLOW_RESOURCES.materials,
+    action: 'view',
+  },
+  {
+    name: '流程管理任务列表',
+    code: 'flow_admin:tasks:view',
+    resource: FLOW_RESOURCES.tasks,
+    action: 'view',
+  },
+] as const;
 
 async function upsertDataPermission(
   repo: ReturnType<typeof dataSource.getRepository<DataPermissionEntity>>,
@@ -45,49 +70,49 @@ async function upsertDataPermission(
   return repo.save(repo.create({ roleId, resource, scope }));
 }
 
-async function ensureTaskViewPermission(
+async function ensureViewPermissions(
   permissionRepo: ReturnType<typeof dataSource.getRepository<PermissionEntity>>,
   rolePermissionRepo: ReturnType<typeof dataSource.getRepository<RolePermissionEntity>>,
   applicationId: string,
   roleId: string,
-): Promise<PermissionEntity> {
-  let permission = await permissionRepo.findOne({
-    where: { applicationId, code: TASK_PERMISSION_CODE },
-  });
-  if (!permission) {
-    permission = await permissionRepo.save(
-      permissionRepo.create({
-        applicationId,
-        name: '流程管理任务列表',
-        code: TASK_PERMISSION_CODE,
-        resource: TASK_RESOURCE,
-        action: 'view',
-      }),
-    );
-    // eslint-disable-next-line no-console
-    console.log(`[seed:flow-admin-access] 已创建 permission: ${TASK_PERMISSION_CODE}`);
-  }
+): Promise<void> {
+  for (const perm of FLOW_VIEW_PERMISSIONS) {
+    let permission = await permissionRepo.findOne({
+      where: { applicationId, code: perm.code },
+    });
+    if (!permission) {
+      permission = await permissionRepo.save(
+        permissionRepo.create({
+          applicationId,
+          name: perm.name,
+          code: perm.code,
+          resource: perm.resource,
+          action: perm.action,
+        }),
+      );
+      // eslint-disable-next-line no-console
+      console.log(`[seed:flow-admin-access] 已创建 permission: ${perm.code}`);
+    }
 
-  const linked = await rolePermissionRepo.findOne({
-    where: { roleId, permissionId: permission.id },
-  });
-  if (!linked) {
-    await rolePermissionRepo.save(
-      rolePermissionRepo.create({ roleId, permissionId: permission.id }),
-    );
-    // eslint-disable-next-line no-console
-    console.log(`[seed:flow-admin-access] 已关联 permission → role (${roleId})`);
+    const linked = await rolePermissionRepo.findOne({
+      where: { roleId, permissionId: permission.id },
+    });
+    if (!linked) {
+      await rolePermissionRepo.save(
+        rolePermissionRepo.create({ roleId, permissionId: permission.id }),
+      );
+      // eslint-disable-next-line no-console
+      console.log(`[seed:flow-admin-access] 已关联 permission ${perm.code} → role`);
+    }
   }
-
-  return permission;
 }
 
 /**
  * 为 flow-admin 配置数据权限，并创建 viewer 演示账号。
  * 运行：pnpm seed:flow-admin-access
  *
- * - admin@qq.com（flow_admin:manager）→ flow_admin:tasks data scope = all
- * - viewer@qq.com（flow_admin:viewer）→ 同 tasks:view 权限，data scope = self
+ * manager（admin@qq.com）→ products/materials/tasks scope=all
+ * viewer（viewer@qq.com）→ products scope=dept, materials/tasks scope=self
  */
 async function run(): Promise<void> {
   await dataSource.initialize();
@@ -108,7 +133,6 @@ async function run(): Promise<void> {
       throw new Error(`应用 ${APP_CODE} 不存在，请先运行 pnpm seed:flow-admin`);
     }
 
-    // ── 1. manager：data scope = all ──────────────────────────────────────
     const managerUser = await userRepo.findOne({ where: { email: MANAGER_EMAIL } });
     if (!managerUser) {
       throw new Error(`用户 ${MANAGER_EMAIL} 不存在，请先运行 pnpm seed:flow-admin`);
@@ -121,18 +145,14 @@ async function run(): Promise<void> {
       throw new Error(`角色 ${MANAGER_ROLE_CODE} 不存在，请先运行 pnpm seed:flow-admin`);
     }
 
-    await upsertDataPermission(
-      dataPermissionRepo,
-      managerRole.id,
-      TASK_RESOURCE,
-      DataScope.ALL,
-    );
-    // eslint-disable-next-line no-console
-    console.log(
-      `[seed:flow-admin-access] ${MANAGER_EMAIL} (${MANAGER_ROLE_CODE}) → ${TASK_RESOURCE} scope=all`,
-    );
+    for (const resource of Object.values(FLOW_RESOURCES)) {
+      await upsertDataPermission(dataPermissionRepo, managerRole.id, resource, DataScope.ALL);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[seed:flow-admin-access] ${MANAGER_EMAIL} (${MANAGER_ROLE_CODE}) → ${resource} scope=all`,
+      );
+    }
 
-    // ── 2. viewer 用户 + credential 账号 ──────────────────────────────────
     let viewerUser = await userRepo.findOne({ where: { email: VIEWER_EMAIL } });
     if (!viewerUser) {
       viewerUser = await userRepo.save(
@@ -146,9 +166,6 @@ async function run(): Promise<void> {
       );
       // eslint-disable-next-line no-console
       console.log(`[seed:flow-admin-access] 已创建用户: ${VIEWER_EMAIL} (id=${viewerUser.id})`);
-    } else {
-      // eslint-disable-next-line no-console
-      console.log(`[seed:flow-admin-access] 用户 ${VIEWER_EMAIL} 已存在，复用 (id=${viewerUser.id})`);
     }
 
     const existingAccount = await accountRepo.findOne({
@@ -166,9 +183,6 @@ async function run(): Promise<void> {
       );
       // eslint-disable-next-line no-console
       console.log(`[seed:flow-admin-access] 已创建 credential 账号: ${VIEWER_EMAIL}，密码: ${VIEWER_PASSWORD}`);
-    } else {
-      // eslint-disable-next-line no-console
-      console.log(`[seed:flow-admin-access] credential 账号 ${VIEWER_EMAIL} 已存在，跳过`);
     }
 
     const existingAppUser = await appUserRepo.findOne({
@@ -183,11 +197,8 @@ async function run(): Promise<void> {
           grantedAt: new Date(),
         }),
       );
-      // eslint-disable-next-line no-console
-      console.log(`[seed:flow-admin-access] 已授权 ${VIEWER_EMAIL} 访问 flow-admin`);
     }
 
-    // ── 3. viewer 角色 + 权限 + data scope = self ─────────────────────────
     let viewerAppRole = await appRoleRepo.findOne({
       where: { applicationId: app.id, code: 'viewer' },
     });
@@ -199,8 +210,6 @@ async function run(): Promise<void> {
           code: 'viewer',
         }),
       );
-      // eslint-disable-next-line no-console
-      console.log('[seed:flow-admin-access] 已创建 application_role: viewer');
     }
 
     let viewerRole = await roleRepo.findOne({
@@ -213,11 +222,9 @@ async function run(): Promise<void> {
           name: '流程查看者',
           code: VIEWER_ROLE_CODE,
           type: RoleType.APPLICATION,
-          description: '只能查看自己的任务数据',
+          description: '演示数据权限：产品按部门、素材/任务仅本人',
         }),
       );
-      // eslint-disable-next-line no-console
-      console.log(`[seed:flow-admin-access] 已创建 access.role: ${VIEWER_ROLE_CODE}`);
     }
 
     const existingUserRole = await userRoleRepo.findOne({
@@ -231,21 +238,32 @@ async function run(): Promise<void> {
           applicationId: app.id,
         }),
       );
-      // eslint-disable-next-line no-console
-      console.log(`[seed:flow-admin-access] 已关联 user_role: ${VIEWER_EMAIL} → ${VIEWER_ROLE_CODE}`);
     }
 
-    await ensureTaskViewPermission(permissionRepo, rolePermissionRepo, app.id, viewerRole.id);
+    await ensureViewPermissions(permissionRepo, rolePermissionRepo, app.id, viewerRole.id);
 
     await upsertDataPermission(
       dataPermissionRepo,
       viewerRole.id,
-      TASK_RESOURCE,
+      FLOW_RESOURCES.products,
+      DataScope.DEPT,
+    );
+    await upsertDataPermission(
+      dataPermissionRepo,
+      viewerRole.id,
+      FLOW_RESOURCES.materials,
       DataScope.SELF,
     );
+    await upsertDataPermission(
+      dataPermissionRepo,
+      viewerRole.id,
+      FLOW_RESOURCES.tasks,
+      DataScope.SELF,
+    );
+
     // eslint-disable-next-line no-console
     console.log(
-      `[seed:flow-admin-access] ${VIEWER_EMAIL} (${VIEWER_ROLE_CODE}) → ${TASK_RESOURCE} scope=self`,
+      `[seed:flow-admin-access] ${VIEWER_EMAIL} (${VIEWER_ROLE_CODE}) → products=dept, materials/tasks=self`,
     );
   } finally {
     await dataSource.destroy();

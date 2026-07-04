@@ -135,7 +135,7 @@ function formatRedirectUris(uris: string[]): string {
 
 async function refreshBoundApplications() {
   try {
-    const res = await getOauthClients({ page: 1, pageSize: 200 });
+    const res = await getOauthClients({ page: 1, pageSize: 100 });
     allBoundApplicationIds.value = new Set(res.items.map(item => item.applicationId));
   } catch {
     allBoundApplicationIds.value = new Set();

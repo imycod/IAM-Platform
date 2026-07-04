@@ -32,9 +32,8 @@ export class UserContextController {
     return this.userContextService.resolveVisibleMenus(req.user.id, applicationId, tree === 'true');
   }
 
-  // IAM 侧 — 建议新增（伪代码，当前仓库还没有）
+  // 兼容旧客户端：返回 scope + 标准化 filters
   @Get('data-scope')
-  @UseGuards(OidcBearerGuard)
   async dataScope(
     @Req() req: AuthedRequest,
     @Query('resource') resource: string,
@@ -43,7 +42,32 @@ export class UserContextController {
     if (!applicationId) {
       throw new ForbiddenException('applicationId 必填');
     }
+    if (!resource?.trim()) {
+      throw new ForbiddenException('resource 必填');
+    }
     await this.applicationService.assertUserCanAccess(applicationId, req.user.id);
-    return this.dataPermissionService.resolveForUser(req.user.id, resource);
+    const scope = await this.dataPermissionService.resolveForUser(req.user.id, resource.trim());
+    const filters = await this.dataPermissionService.resolveFiltersForUser(
+      req.user.id,
+      resource.trim(),
+    );
+    return { ...scope, filters: filters.filters, groups: filters.groups, unrestricted: filters.unrestricted, denyAll: filters.denyAll };
+  }
+
+  /** 标准数据权限 API：返回 ABAC filters，业务系统映射字段后拼 SQL */
+  @Get('data-filters')
+  async dataFilters(
+    @Req() req: AuthedRequest,
+    @Query('resource') resource: string,
+    @Query('applicationId') applicationId?: string,
+  ) {
+    if (!applicationId) {
+      throw new ForbiddenException('applicationId 必填');
+    }
+    if (!resource?.trim()) {
+      throw new ForbiddenException('resource 必填');
+    }
+    await this.applicationService.assertUserCanAccess(applicationId, req.user.id);
+    return this.dataPermissionService.resolveFiltersForUser(req.user.id, resource.trim());
   }
 }

@@ -1,12 +1,13 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { ORGANIZATION_QUERY, type IOrganizationQuery } from '@app/contracts';
+import { ORGANIZATION_QUERY, type IOrganizationQuery, type ResolvedDataPermission } from '@app/contracts';
 import { ResourceService } from '../../resource/services/resource.service';
 import { RoleEntity } from '../../role/entities/role.entity';
 import { UserRoleEntity } from '../../role/entities/user-role.entity';
 import { DataPermissionEntity, DataScope } from '../entities/data-permission.entity';
 import { CreateDataPermissionDto, UpdateDataPermissionDto } from '../dto/data-permission.dto';
+import { DataPermissionFilterResolver } from './data-permission-filter.resolver';
 
 export interface ResolvedDataScope {
   scope: DataScope;
@@ -33,6 +34,7 @@ export class DataPermissionService {
     @InjectRepository(RoleEntity)
     private readonly roleRepo: Repository<RoleEntity>,
     private readonly resourceService: ResourceService,
+    private readonly filterResolver: DataPermissionFilterResolver,
     @Optional()
     @Inject(ORGANIZATION_QUERY)
     private readonly organizationQuery?: IOrganizationQuery,
@@ -142,6 +144,20 @@ export class DataPermissionService {
       result.departmentIds = await this.organizationQuery.getManagedDepartmentIds(userId);
     }
     return result;
+  }
+
+  /**
+   * 标准化数据权限：输出可直接映射业务表字段的 filters（供 flow-admin 等业务系统消费）。
+   */
+  async resolveFiltersForUser(userId: string, resource: string): Promise<ResolvedDataPermission> {
+    const scopeResult = await this.resolveForUser(userId, resource);
+    const resourceEntity = await this.resourceService.findByCode(resource);
+    return this.filterResolver.resolveWithOrgContext(
+      userId,
+      resource,
+      scopeResult,
+      resourceEntity?.attributes ?? null,
+    );
   }
 
   private async attachRoleInfo(rows: DataPermissionEntity[]): Promise<DataPermissionListItem[]> {

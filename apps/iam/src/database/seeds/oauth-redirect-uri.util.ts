@@ -8,6 +8,11 @@ export function devRedirectUris(ports: number[]): string[] {
   return uris;
 }
 
+/** Nginx 子域模拟（deploy/nginx） */
+export function nginxRedirectUris(hosts: string[]): string[] {
+  return hosts.map((host) => `http://${host}/callback.html`);
+}
+
 export function mergeRedirectUris(
   existing: string[] | null | undefined,
   required: string[],

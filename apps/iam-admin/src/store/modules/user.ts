@@ -15,6 +15,7 @@ import {
 } from "@/api/user";
 import { useMultiTagsStoreHook } from "./multiTags";
 import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
+import { clearOidcPkceState } from "@/utils/oidc";
 
 export const useUserStore = defineStore("pure-user", {
   state: (): userType => ({
@@ -82,6 +83,7 @@ export const useUserStore = defineStore("pure-user", {
       this.roles = [];
       this.permissions = [];
       removeToken();
+      clearOidcPkceState();
       useMultiTagsStoreHook().handleTags("equal", [...routerArrays]);
       resetRouter();
       router.push("/login");

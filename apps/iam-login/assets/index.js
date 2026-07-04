@@ -342,7 +342,7 @@ function updateCharacters() {
 
 // ============ LOGIN ERROR ANIMATION ============
 let errorRecoverTimer = null;
-const shakeIds = ['purple-eyes','black-eyes','orange-eyes','yellow-eyes','yellow-mouth','orange-mouth'];
+const shakeIds = ['purple-eyes', 'black-eyes', 'orange-eyes', 'yellow-eyes', 'yellow-mouth', 'orange-mouth'];
 
 function triggerLoginError() {
   // Clear any previous error recovery timer so repeated clicks work
@@ -389,6 +389,8 @@ const ERROR_MESSAGES = {
   invalid_credentials: 'Invalid email or password. Please try again.',
   missing_credentials: 'Please enter your email and password.',
   missing_uid: 'Invalid login session. Please start sign-in from your application again.',
+  interaction_expired: 'Login session expired. Resuming automatically…',
+  invalid_session: 'Login session expired. Resuming automatically…',
 };
 
 function showLoginError(message) {
@@ -398,21 +400,32 @@ function showLoginError(message) {
   triggerLoginError();
 }
 
-function initOidcLoginPage() {
-  if (loginErrorCode) {
-    showLoginError(ERROR_MESSAGES[loginErrorCode] || 'Login failed. Please try again.');
-  }
-
+async function initOidcLoginPage() {
   if (!interactionUid) {
     showLoginError(ERROR_MESSAGES.missing_uid);
     document.getElementById('btn-login').disabled = true;
     return;
   }
+
+  if (window.IamLoginSsoSync) {
+    const forceExpired =
+      !!loginErrorCode && IamLoginSsoSync.isInvalidInteractionError(loginErrorCode);
+    await IamLoginSsoSync.initSsoSync(interactionUid, { forceExpired });
+  }
+
+  if (loginErrorCode === 'invalid_credentials') {
+    showLoginError(ERROR_MESSAGES.invalid_credentials);
+  } else if (
+    loginErrorCode &&
+    !(window.IamLoginSsoSync && IamLoginSsoSync.isInvalidInteractionError(loginErrorCode))
+  ) {
+    showLoginError(ERROR_MESSAGES[loginErrorCode] || 'Login failed. Please try again.');
+  }
 }
 
 initOidcLoginPage();
 
-function submitInteractionLogin(email, password) {
+async function submitInteractionLogin(email, password) {
   const form = document.createElement('form');
   form.method = 'POST';
   form.action = `${iamLoginCfg.apiBaseUrl.replace(/\/$/, '')}/api/interaction/${encodeURIComponent(interactionUid)}/login`;
@@ -477,7 +490,7 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
   btn.querySelector('.btn-text').textContent = 'Signing in...';
   btn.disabled = true;
 
-  submitInteractionLogin(email, pwd);
+  void submitInteractionLogin(email, pwd);
 });
 
 // Initial render

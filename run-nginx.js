@@ -1,3 +1,7 @@
+/**
+ * Nginx 子域模式下一键启动：IAM(backend nginx env) + iam-login + iam-admin
+ * 用法：pnpm dev:nginx
+ */
 const { spawn } = require('child_process');
 const path = require('path');
 
@@ -6,14 +10,14 @@ const adminDir = path.join(root, 'apps', 'iam-admin');
 
 const children = [];
 
-function start(label, command, args, cwd) {
+function start(label, command, args, cwd, extraEnv = {}) {
   console.log(`[${label}] starting...`);
 
   const child = spawn(command, args, {
     cwd,
     shell: true,
     stdio: 'inherit',
-    env: process.env,
+    env: { ...process.env, ...extraEnv },
   });
 
   child.on('error', (err) => {
@@ -52,15 +56,20 @@ function shutdown() {
 }
 
 async function main() {
-  // start('iam-backend', 'pnpm', ['run', 'start:dev::nginx'], root);
-  await sleep(3000);
+  console.log('\n=== Nginx 子域模式 (admin/login/api/flow.iam.local) ===');
+  console.log('请确认 hosts 已配置且 docker nginx 已启动：');
+  console.log('  docker compose -f deploy/docker-compose.nginx.yaml up -d\n');
+
+  start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root);
+  await sleep(4000);
 
   start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root);
   await sleep(2000);
 
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);
 
-  console.log('\nAll services started. Press Ctrl+C to stop.\n');
+  console.log('\n访问 http://admin.iam.local （未登录应跳转 http://login.iam.local）');
+  console.log('Press Ctrl+C to stop.\n');
 }
 
 process.on('SIGINT', shutdown);

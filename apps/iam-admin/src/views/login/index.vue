@@ -3,7 +3,7 @@ import Motion from "./utils/motion";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { loginRules } from "./utils/rule";
-import { onMounted, ref, reactive, toRaw } from "vue";
+import { ref, reactive, toRaw } from "vue";
 import { debounce } from "@pureadmin/utils";
 import { useNav } from "@/layout/hooks/useNav";
 import { useEventListener } from "@vueuse/core";
@@ -14,14 +14,7 @@ import { initRouter, getTopMenu } from "@/router/utils";
 import { bg, avatar, illustration } from "./utils/static";
 import { useRenderIcon } from "@/components/ReIcon/src/hooks";
 import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
-import {
-  startOidcLogin,
-  shouldAutoSso,
-  skipAutoSso,
-  clearSkipAutoSso
-} from "@/utils/oidc";
-import Cookies from "js-cookie";
-import { getToken, multipleTabsKey } from "@/utils/auth";
+import { useSsoLoginPage } from "./useSsoLoginPage";
 
 import dayIcon from "@/assets/svg/day.svg?component";
 import darkIcon from "@/assets/svg/dark.svg?component";
@@ -37,6 +30,21 @@ const loading = ref(false);
 const disabled = ref(false);
 const ruleFormRef = ref<FormInstance>();
 
+const enterApp = () => {
+  initRouter().then(() => {
+    router.replace(getTopMenu(true)?.path ?? "/welcome");
+  });
+};
+
+const {
+  phase,
+  statusText,
+  ssoBusy,
+  showPasswordForm,
+  onManualSsoLogin,
+  onUsePasswordLogin
+} = useSsoLoginPage(enterApp);
+
 const { initStorage } = useLayout();
 initStorage();
 
@@ -49,34 +57,9 @@ const ruleForm = reactive({
   password: "123456"
 });
 
-const showPasswordForm = ref(!shouldAutoSso());
-
 const onSsoLogin = () => {
-  clearSkipAutoSso();
-  loading.value = true;
-  startOidcLogin().catch(() => {
-    loading.value = false;
-    message("跳转 SSO 失败", { type: "error" });
-  });
+  void onManualSsoLogin();
 };
-
-const onUsePasswordLogin = () => {
-  skipAutoSso();
-  showPasswordForm.value = true;
-};
-
-onMounted(() => {
-  const token = getToken();
-  if (Cookies.get(multipleTabsKey) && token?.accessToken) {
-    initRouter().then(() => {
-      router.replace(getTopMenu(true)?.path ?? "/welcome");
-    });
-    return;
-  }
-  if (shouldAutoSso()) {
-    onSsoLogin();
-  }
-});
 
 const onLogin = async (formEl: FormInstance | undefined) => {
   if (!formEl) return;
@@ -154,7 +137,7 @@ useEventListener(document, "keydown", ({ code }) => {
 
           <Motion v-if="!showPasswordForm" :delay="100">
             <p class="text-center text-gray-500 text-sm mb-4">
-              正在跳转 IAM 统一认证…
+              {{ statusText || "正在跳转 IAM 统一认证…" }}
             </p>
           </Motion>
 
@@ -164,10 +147,11 @@ useEventListener(document, "keydown", ({ code }) => {
                 class="w-full"
                 size="default"
                 type="primary"
-                :loading="loading"
+                :loading="ssoBusy || phase !== 'ready'"
+                :disabled="ssoBusy"
                 @click="onSsoLogin"
               >
-                SSO 登录（IAM 统一认证）
+                {{ ssoBusy ? "正在进入…" : "SSO 登录（IAM 统一认证）" }}
               </el-button>
             </Motion>
             <Motion :delay="250">

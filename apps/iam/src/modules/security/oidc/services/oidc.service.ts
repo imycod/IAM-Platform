@@ -86,9 +86,7 @@ export class OidcService implements IOidcInteraction {
     const iamLoginUrl = appCfg.iamLoginUrl;
     const clients = await this.oauthClientService.toOidcClients();
     const sessionTtlRaw = this.config.get<string>('OIDC_SESSION_TTL_SECONDS');
-    const sessionTtlSeconds = sessionTtlRaw
-      ? parseInt(sessionTtlRaw, 10)
-      : 14 * 24 * 60 * 60;
+    const sessionTtlSeconds = sessionTtlRaw ? parseInt(sessionTtlRaw, 10) : 14 * 24 * 60 * 60;
 
     const mod = await dynamicImport<{
       default: new (issuer: string, config: unknown) => OidcProvider;
@@ -110,6 +108,12 @@ export class OidcService implements IOidcInteraction {
         introspection: { enabled: true },
       },
       cookies: { keys: cookieKeys },
+      /**
+       * 默认 scopes 不含 offline_access 时，oidc-provider 会把 authorization code 绑定到 SSO Session。
+       * 多 SPA（8848/8849）并行授权时 Session 可能被新登录替换，导致 code 换 token 报 invalid_grant。
+       * 演示环境关闭该绑定，code 仍受 PKCE + 短 TTL 保护。
+       */
+      expiresWithSession: async () => false,
       ttl: {
         Session: sessionTtlSeconds,
         Grant: sessionTtlSeconds,
@@ -117,6 +121,7 @@ export class OidcService implements IOidcInteraction {
         IdToken: sessionTtlSeconds,
         RefreshToken: sessionTtlSeconds,
         Interaction: sessionTtlSeconds,
+        AuthorizationCode: 300,
       },
       interactions: {
         url: (_ctx: unknown, interaction: { uid: string }) =>
@@ -131,28 +136,36 @@ export class OidcService implements IOidcInteraction {
       loadExistingGrant: async (ctx: {
         oidc: {
           result?: { consent?: { grantId?: string } };
-          session?: { accountId?: string; grantIdFor: (clientId: string) => string | undefined };
+          session?: {
+            accountId?: string;
+            grantIdFor: ((clientId: string) => string | undefined) &
+              ((clientId: string, value: string) => void);
+          };
           client?: { clientId: string };
           provider: OidcProvider;
           requestParamOIDCScopes?: Set<string>;
         };
       }) => {
         const { oidc } = ctx;
+        const clientId = oidc.client?.clientId;
         const existingId =
           oidc.result?.consent?.grantId ??
-          (oidc.client ? oidc.session?.grantIdFor(oidc.client.clientId) : undefined);
+          (clientId ? oidc.session?.grantIdFor(clientId) : undefined);
         if (existingId) {
-          return oidc.provider.Grant.find(existingId);
+          const existing = await oidc.provider.Grant.find(existingId);
+          if (existing) {
+            return existing;
+          }
         }
 
         const accountId = oidc.session?.accountId;
-        if (!accountId || !oidc.client) {
+        if (!accountId || !oidc.client || !clientId) {
           return undefined;
         }
 
         const grant = new oidc.provider.Grant({
           accountId,
-          clientId: oidc.client.clientId,
+          clientId,
         });
         const scopes = oidc.requestParamOIDCScopes;
         if (scopes?.size) {
@@ -165,6 +178,9 @@ export class OidcService implements IOidcInteraction {
           grant.addOIDCScope('email');
         }
         await grant.save();
+        if (oidc.session) {
+          oidc.session.grantIdFor(clientId, grant.jti);
+        }
         return grant;
       },
       findAccount: async (_ctx: unknown, id: string) => {
@@ -282,6 +298,16 @@ export class OidcService implements IOidcInteraction {
   }
 
   // ---- IOidcInteraction 实现 ----
+
+  async getSessionAccountId(req: unknown, res: unknown): Promise<string | null> {
+    const provider = await this.getProvider();
+    try {
+      const session = await provider.Session.get({ req, res } as never);
+      return session?.accountId ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   async getDetails(req: unknown, res: unknown): Promise<OidcInteractionDetails> {
     const provider = await this.getProvider();

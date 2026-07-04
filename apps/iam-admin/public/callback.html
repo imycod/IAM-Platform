@@ -14,6 +14,7 @@
   <p id="msg">交换 access_token 中</p>
 
   <script src="config.js"></script>
+  <script src="pkce-sha256.js"></script>
   <script src="oidc.js"></script>
   <script>
     (async function () {
@@ -24,19 +25,28 @@
       const error = params.get("error");
 
       if (error) {
+        const silent = state && IamClientOidc.isSilentState(state);
+        IamClientOidc.clearSavedState(state);
+        if (
+          silent &&
+          (error === "login_required" ||
+            error === "consent_required" ||
+            error === "interaction_required")
+        ) {
+          window.location.replace("/#/login?sso_interactive=1");
+          return;
+        }
         document.getElementById("msg").innerHTML =
           '<span class="err">授权失败: ' + error + "</span>";
         return;
       }
 
       const saved = IamClientOidc.getSavedState();
-      if (!state || state !== saved) {
+      if (!state || (!IamClientOidc.hasPendingAuth(state) && state !== saved)) {
         document.getElementById("msg").innerHTML =
           '<span class="err">state 校验失败</span>';
         return;
       }
-      IamClientOidc.clearSavedState();
-
       if (!code) {
         document.getElementById("msg").innerHTML =
           '<span class="err">缺少 authorization code</span>';
@@ -44,11 +54,13 @@
       }
 
       try {
-        const tokens = await IamClientOidc.exchangeCode(cfg, code);
+        const tokens = await IamClientOidc.exchangeCode(cfg, code, state);
+        IamClientOidc.clearSavedState(state);
         const bootstrap = await IamClientOidc.fetchOidcBootstrap(cfg, tokens.access_token);
         IamClientOidc.persistPortalSession(bootstrap, tokens);
         window.location.replace("/");
       } catch (e) {
+        IamClientOidc.clearSavedState(state);
         document.getElementById("msg").innerHTML =
           '<span class="err">' + (e.message || e) + "</span>";
       }

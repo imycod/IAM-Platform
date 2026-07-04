@@ -24,6 +24,7 @@ export default ({ mode }: ConfigEnv): UserConfigExport => {
       port: VITE_PORT,
       strictPort: true,
       host: "0.0.0.0",
+      allowedHosts: ["admin.iam.local", "localhost", "127.0.0.1"],
       // 本地跨域代理 https://cn.vitejs.dev/config/server-options.html#server-proxy
       proxy: {
         "/api": {

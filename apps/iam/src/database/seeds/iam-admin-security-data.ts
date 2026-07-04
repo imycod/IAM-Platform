@@ -12,7 +12,7 @@ import {
 } from './menu-seed.util';
 
 const APP_CODE = 'iam-admin';
-const MANAGER_ROLE_CODE = 'iam_admin:admin';
+const MANAGER_ROLE_CODE = 'iam_admin:manager';
 
 /** 安全域菜单 */
 const SECURITY_MENUS: MenuSeed[] = [

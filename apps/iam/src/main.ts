@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import type { NextFunction, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
+import express from 'express';
 import { AllExceptionsFilter, TransformInterceptor } from '@app/common';
 import type { AppConfig } from '@app/config';
 import { AppModule } from './app.module';
@@ -17,15 +18,31 @@ async function bootstrap(): Promise<void> {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
   expressApp.use(cookieParser());
+  expressApp.use(express.urlencoded({ extended: false }));
 
   const corsOrigins = new Set([
     'http://localhost:4173',
     'http://127.0.0.1:4173',
     'http://localhost:8848',
     'http://127.0.0.1:8848',
+    'http://127.0.0.1:8849',
+    'http://localhost:8849',
     'http://localhost:4180',
     'http://127.0.0.1:4180',
+    // Nginx 子域模拟（deploy/nginx）
+    'http://login.iam.local',
+    'http://api.iam.local',
+    'http://admin.iam.local',
+    'http://flow.iam.local',
   ]);
+  const appUrl = appCfg.url;
+  if (appUrl) {
+    try {
+      corsOrigins.add(new URL(appUrl).origin);
+    } catch {
+      // ignore invalid APP_URL
+    }
+  }
   const iamLoginUrl = appCfg.iamLoginUrl;
   if (iamLoginUrl) {
     try {
@@ -38,6 +55,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: [...corsOrigins],
     credentials: true,
+    exposedHeaders: ['Location'],
   });
 
   // 挂载 node-oidc-provider 到 /oidc（express 会自动剥离前缀，符合 provider 路由预期）。
@@ -64,10 +82,18 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   await app.listen(appCfg.port);
+  const oidcIssuer = config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
   Logger.log(
     `IAM Platform 已启动: ${appCfg.url}/${appCfg.globalPrefix} [${appCfg.env}]`,
     'Bootstrap',
   );
+  Logger.log(
+    `OIDC issuer=${oidcIssuer}, IAM_LOGIN_URL=${appCfg.iamLoginUrl ?? '(内置简易页)'}`,
+    'Bootstrap',
+  );
+  if (appCfg.iamLoginUrl?.includes('localhost') && process.env.NODE_ENV === 'nginx') {
+    Logger.warn('NODE_ENV=nginx 但 IAM_LOGIN_URL 仍指向 localhost，请检查 .env.nginx', 'Bootstrap');
+  }
 }
 
 void bootstrap();

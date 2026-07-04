@@ -36,6 +36,11 @@ import {
   removeToken,
   multipleTabsKey
 } from "@/utils/auth";
+import {
+  beginSsoRedirect,
+  getLoginRouteQuery,
+  shouldAutoSso
+} from "@/utils/oidc";
 
 /** 自动导入全部静态路由，无需再手动引入！匹配 src/router/modules 目录（任何嵌套级别）中具有 .ts 扩展名的所有文件，除了 remaining.ts 文件
  * 如何匹配所有文件请看：https://github.com/mrmlnc/fast-glob#basic-syntax
@@ -205,6 +210,22 @@ router.beforeEach((to: ToRouteType, _from, next) => {
       toCorrectRoute();
     }
   } else {
+    const loginQuery = getLoginRouteQuery();
+    const isInteractiveReturn =
+      to.path === "/login" && loginQuery.get("sso_interactive") === "1";
+    const usePasswordLogin = to.path === "/login" && !shouldAutoSso();
+
+    if (isInteractiveReturn || usePasswordLogin) {
+      next();
+      return;
+    }
+
+    if (shouldAutoSso()) {
+      NProgress.done();
+      void beginSsoRedirect();
+      return;
+    }
+
     if (to.path !== "/login") {
       if (whiteList.indexOf(to.path) !== -1) {
         next();

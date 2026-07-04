@@ -23,6 +23,9 @@ export interface OidcLoginResult {
 }
 
 export interface IOidcInteraction {
+  /** 读取 IAM OIDC SSO 会话是否已登录（读 _session cookie）。 */
+  getSessionAccountId(req: unknown, res: unknown): Promise<string | null>;
+
   /** 读取当前交互详情（对应 provider.interactionDetails）。 */
   getDetails(req: unknown, res: unknown): Promise<OidcInteractionDetails>;
 

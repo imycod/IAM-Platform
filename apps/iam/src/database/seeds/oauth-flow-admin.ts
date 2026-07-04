@@ -1,11 +1,15 @@
 import dataSource from '../data-source';
 import { ApplicationEntity } from '../../modules/application/application/entities/application.entity';
 import { OauthClientEntity } from '../../modules/security/oauth-client/entities/oauth-client.entity';
-import { devRedirectUris, mergeRedirectUris } from './oauth-redirect-uri.util';
+import { devRedirectUris, mergeRedirectUris, nginxRedirectUris } from './oauth-redirect-uri.util';
 
 const APP_CODE = 'flow-admin';
 export const FLOW_ADMIN_SPA_CLIENT_ID = 'flow-admin-spa';
-export const FLOW_ADMIN_SPA_REDIRECT_URIS = devRedirectUris([4173]);
+/** flow-admin：直连端口 + Nginx 子域 */
+export const FLOW_ADMIN_SPA_REDIRECT_URIS = [
+  ...devRedirectUris([8849, 4173]),
+  ...nginxRedirectUris(['flow.iam.local']),
+];
 
 /**
  * 为 flow-admin SPA 创建 OIDC 客户端（PKCE 公共客户端）。

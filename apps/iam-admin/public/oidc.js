@@ -1,8 +1,32 @@
 (function (global) {
-  const STORAGE_VERIFIER = "iam_client_pkce_verifier";
+  const STORAGE_VERIFIER_PREFIX = "iam_client_pkce_verifier:";
+  const STORAGE_SILENT_PREFIX = "iam_client_oidc_silent:";
   const STORAGE_STATE = "iam_client_oauth_state";
-  /** 使用 localStorage 持久化，关闭浏览器后仍可复用 token / 触发 SSO */
+  const REDIRECT_LOCK = "iam_client_oidc_redirecting";
   const STORAGE_TOKENS = "iam_client_oidc_tokens";
+  const REDIRECT_LOCK_TTL_MS = 120000;
+
+  /** PKCE 跨 Tab 共享（同 origin 多 Tab SSO 回调） */
+  function pkceStore() {
+    return localStorage;
+  }
+
+  function acquireRedirectLock() {
+    const store = pkceStore();
+    const raw = store.getItem(REDIRECT_LOCK);
+    if (raw) {
+      const ts = Number(raw);
+      if (!Number.isNaN(ts) && Date.now() - ts < REDIRECT_LOCK_TTL_MS) {
+        return false;
+      }
+    }
+    store.setItem(REDIRECT_LOCK, String(Date.now()));
+    return true;
+  }
+
+  function releaseRedirectLock() {
+    pkceStore().removeItem(REDIRECT_LOCK);
+  }
 
   function base64UrlEncode(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -14,8 +38,7 @@
   }
 
   async function sha256(plain) {
-    const data = new TextEncoder().encode(plain);
-    return crypto.subtle.digest("SHA-256", data);
+    return PkceSha256.sha256(plain);
   }
 
   function randomString(len) {
@@ -26,21 +49,24 @@
     return Array.from(arr, x => chars[x % chars.length]).join("");
   }
 
-  async function createPkce() {
-    const verifier = randomString(64);
-    const challenge = base64UrlEncode(await sha256(verifier));
-    return { verifier, challenge };
-  }
-
   function resolveRedirectUri(cfg) {
     return cfg.redirectUri || `${window.location.origin}/callback.html`;
   }
 
-  async function startLogin(cfg) {
-    const { verifier, challenge } = await createPkce();
+  async function startLogin(cfg, options) {
+    if (!acquireRedirectLock()) {
+      return;
+    }
+
+    const store = pkceStore();
+    const verifier = randomString(64);
+    const challenge = base64UrlEncode(await sha256(verifier));
     const state = randomString(32);
-    sessionStorage.setItem(STORAGE_VERIFIER, verifier);
-    sessionStorage.setItem(STORAGE_STATE, state);
+    store.setItem(`${STORAGE_VERIFIER_PREFIX}${state}`, verifier);
+    store.setItem(STORAGE_STATE, state);
+    if (options && options.silent) {
+      store.setItem(`${STORAGE_SILENT_PREFIX}${state}`, "1");
+    }
     const redirectUri = resolveRedirectUri(cfg);
 
     const params = new URLSearchParams({
@@ -52,12 +78,16 @@
       code_challenge: challenge,
       code_challenge_method: "S256"
     });
+    if (options && options.silent) {
+      params.set("prompt", "none");
+    }
 
     window.location.href = `${cfg.oidcIssuer}/auth?${params.toString()}`;
   }
 
-  async function exchangeCode(cfg, code) {
-    const verifier = sessionStorage.getItem(STORAGE_VERIFIER);
+  async function exchangeCode(cfg, code, state) {
+    const store = pkceStore();
+    const verifier = store.getItem(`${STORAGE_VERIFIER_PREFIX}${state}`);
     if (!verifier) {
       throw new Error("缺少 PKCE verifier，请重新登录");
     }
@@ -77,10 +107,12 @@
     });
     const json = await res.json();
     if (!res.ok) {
-      throw new Error(json.error_description || json.error || "换 token 失败");
+      throw new Error(json.error_detail || json.error_description || json.error || "换 token 失败");
     }
 
-    sessionStorage.removeItem(STORAGE_VERIFIER);
+    store.removeItem(`${STORAGE_VERIFIER_PREFIX}${state}`);
+    store.removeItem(`${STORAGE_SILENT_PREFIX}${state}`);
+    releaseRedirectLock();
     localStorage.setItem(STORAGE_TOKENS, JSON.stringify(json));
     return json;
   }
@@ -90,18 +122,52 @@
     return raw ? JSON.parse(raw) : null;
   }
 
+  function clearAllPkceState() {
+    const store = pkceStore();
+    const keys = [];
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (
+        key &&
+        (key.indexOf(STORAGE_VERIFIER_PREFIX) === 0 ||
+          key.indexOf(STORAGE_SILENT_PREFIX) === 0 ||
+          key === STORAGE_STATE ||
+          key === REDIRECT_LOCK)
+      ) {
+        keys.push(key);
+      }
+    }
+    keys.forEach(function (k) {
+      store.removeItem(k);
+    });
+  }
+
   function clearSession() {
     localStorage.removeItem(STORAGE_TOKENS);
-    sessionStorage.removeItem(STORAGE_VERIFIER);
-    sessionStorage.removeItem(STORAGE_STATE);
+    clearAllPkceState();
   }
 
   function getSavedState() {
-    return sessionStorage.getItem(STORAGE_STATE);
+    return pkceStore().getItem(STORAGE_STATE);
   }
 
-  function clearSavedState() {
-    sessionStorage.removeItem(STORAGE_STATE);
+  function hasPendingAuth(state) {
+    return !!(state && pkceStore().getItem(`${STORAGE_VERIFIER_PREFIX}${state}`));
+  }
+
+  function clearSavedState(state) {
+    const store = pkceStore();
+    const key = state ?? store.getItem(STORAGE_STATE);
+    if (key) {
+      store.removeItem(`${STORAGE_VERIFIER_PREFIX}${key}`);
+      store.removeItem(`${STORAGE_SILENT_PREFIX}${key}`);
+    }
+    store.removeItem(STORAGE_STATE);
+    releaseRedirectLock();
+  }
+
+  function isSilentState(state) {
+    return state && pkceStore().getItem(`${STORAGE_SILENT_PREFIX}${state}`) === "1";
   }
 
   async function fetchOidcBootstrap(cfg, accessToken) {
@@ -121,7 +187,6 @@
     return layer;
   }
 
-  /** 写入 pure-admin 使用的 cookie / localStorage */
   function persistPortalSession(bootstrap, tokens) {
     const expiresIn = tokens.expires_in ?? 3600;
     const expiresMs = Date.now() + expiresIn * 1000;
@@ -154,7 +219,9 @@
     getTokens,
     clearSession,
     getSavedState,
+    hasPendingAuth,
     clearSavedState,
+    isSilentState,
     fetchOidcBootstrap,
     persistPortalSession
   };

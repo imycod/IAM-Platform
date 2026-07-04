@@ -1,13 +1,16 @@
 import dataSource from '../data-source';
 import { ApplicationEntity } from '../../modules/application/application/entities/application.entity';
 import { OauthClientEntity } from '../../modules/security/oauth-client/entities/oauth-client.entity';
-import { devRedirectUris, mergeRedirectUris } from './oauth-redirect-uri.util';
+import { devRedirectUris, mergeRedirectUris, nginxRedirectUris } from './oauth-redirect-uri.util';
 
 const APP_CODE = 'iam-admin';
 export const IAM_ADMIN_SPA_CLIENT_ID = 'iam-admin-spa';
 
-/** iam-admin 本地 dev / vite 备用端口 */
-export const IAM_ADMIN_SPA_REDIRECT_URIS = devRedirectUris([8848, 5173]);
+/** iam-admin：直连端口 + Nginx 子域 */
+export const IAM_ADMIN_SPA_REDIRECT_URIS = [
+  ...devRedirectUris([8848, 5173]),
+  ...nginxRedirectUris(['admin.iam.local']),
+];
 
 /**
  * 为 iam-client SPA 创建 OIDC 客户端（PKCE 公共客户端）。

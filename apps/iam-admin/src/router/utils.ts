@@ -179,6 +179,31 @@ function findRouteByPath(path: string, routes: RouteRecordRaw[]) {
   }
 }
 
+/**
+ * 刷新页面时解析应写入 multiTags 的路由。
+ * 动态路由扁平化后目录节点 children 会被移除，需 fallback 到 redirect 或自身。
+ */
+function resolveMultiTagRoute(
+  route: RouteRecordRaw,
+  routes: RouteRecordRaw[]
+): Pick<RouteRecordRaw, "path" | "name" | "meta"> {
+  const firstChild = route.children?.[0];
+  if (firstChild?.meta?.title) {
+    return { path: firstChild.path, name: firstChild.name, meta: firstChild.meta };
+  }
+
+  const redirectPath =
+    typeof route.redirect === "string" ? route.redirect : undefined;
+  if (redirectPath && redirectPath !== route.path) {
+    const leaf = findRouteByPath(redirectPath, routes);
+    if (leaf?.meta?.title) {
+      return { path: leaf.path, name: leaf.name, meta: leaf.meta };
+    }
+  }
+
+  return { path: route.path, name: route.name, meta: route.meta };
+}
+
 /** 动态路由注册完成后，再添加全屏404（页面不存在）页面，避免刷新动态路由页面时误跳转到404页面 */
 function addPathMatch() {
   if (!router.hasRoute("pathMatch")) {
@@ -463,6 +488,7 @@ export {
   addAsyncRoutes,
   getParentPaths,
   findRouteByPath,
+  resolveMultiTagRoute,
   handleAliveRoute,
   formatTwoStageRoutes,
   formatFlatteningRoutes,

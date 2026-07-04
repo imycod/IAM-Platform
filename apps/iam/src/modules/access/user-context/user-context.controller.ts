@@ -1,6 +1,6 @@
 import { Controller, ForbiddenException, Get, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
-import { OidcBearerGuard } from '../../security/guards/oidc-bearer.guard';
+import { PortalOrOidcGuard } from './guards/portal-or-oidc.guard';
 import { UserContextService } from './user-context.service';
 import { DataPermissionService } from '../data-permission/services/data-permission.service';
 import { ApplicationService } from '../../application/services/application.service';
@@ -10,7 +10,7 @@ interface AuthedRequest extends Request {
 }
 
 @Controller('me')
-@UseGuards(OidcBearerGuard)
+@UseGuards(PortalOrOidcGuard)
 export class UserContextController {
   constructor(
     private readonly userContextService: UserContextService,

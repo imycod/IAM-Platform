@@ -16,9 +16,19 @@ const APP_CODE = 'flow-admin';
 const USER_EMAIL = 'admin@qq.com';
 
 const MENUS = [
-  { name: '产品列表', path: '/products', sort: 1, permissionCode: 'flow_admin:products:view' },
-  { name: '素材列表', path: '/materials', sort: 2, permissionCode: 'flow_admin:materials:view' },
-  { name: '任务列表', path: '/tasks', sort: 3, permissionCode: 'flow_admin:tasks:view' },
+  {
+    name: '产品列表',
+    path: '/products/index',
+    sort: 1,
+    permissionCode: 'flow_admin:products:view',
+  },
+  {
+    name: '素材列表',
+    path: '/materials/index',
+    sort: 2,
+    permissionCode: 'flow_admin:materials:view',
+  },
+  { name: '任务列表', path: '/tasks/index', sort: 3, permissionCode: 'flow_admin:tasks:view' },
 ] as const;
 
 /**

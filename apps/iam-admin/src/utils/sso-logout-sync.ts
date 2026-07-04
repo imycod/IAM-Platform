@@ -1,5 +1,6 @@
 import Cookies from "js-cookie";
 import { getToken, multipleTabsKey } from "@/utils/auth";
+import { isSsoSession, setLoginMethod } from "@/utils/login-session";
 
 const LOGOUT_EVENT_COOKIE = "iam_sso_logout_event";
 const LOGIN_AT_KEY = "iam_sso_login_at";
@@ -32,14 +33,15 @@ function getLoginAt(): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
-/** 登录成功后调用：忽略此前的 logout 事件 cookie，避免切 Tab 误触发本地登出 */
+/** SSO 登录成功后调用 */
 export function markSsoLoginComplete(): void {
+  setLoginMethod("sso");
   sessionStorage.setItem(LOGIN_AT_KEY, String(Date.now()));
   lastLogoutEventTs = parseLogoutEventCookie();
 }
 
 function probeRemoteLogout(onRemoteLogout: () => void): void {
-  if (!hasLocalSession()) {
+  if (!hasLocalSession() || !isSsoSession()) {
     return;
   }
 
@@ -52,9 +54,9 @@ function probeRemoteLogout(onRemoteLogout: () => void): void {
   }
 }
 
-/** 监听 IdP 全局登出：其它应用 RP-Initiated Logout 后，本应用清本地会话 */
+/** 监听 IdP 全局登出：仅 SSO 会话响应，账密登录不受影响 */
 export function setupSsoLogoutSync(onRemoteLogout: () => void): void {
-  if (hasLocalSession()) {
+  if (hasLocalSession() && isSsoSession()) {
     markSsoLoginComplete();
   }
 

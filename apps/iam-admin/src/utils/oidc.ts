@@ -106,7 +106,7 @@ async function startOidcAuthorize(
   options?: OidcAuthorizeOptions
 ): Promise<void> {
   if (!acquireRedirectLock()) {
-    return;
+    throw new Error("oidc_redirect_lock_busy");
   }
 
   const store = pkceStore();

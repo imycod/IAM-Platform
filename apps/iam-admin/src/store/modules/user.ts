@@ -18,8 +18,14 @@ import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 import {
   clearLocalSsoSession,
   clearOidcPkceState,
-  performGlobalLogout
+  performGlobalLogout,
+  skipAutoSso
 } from "@/utils/oidc";
+import {
+  clearLoginMethod,
+  isSsoSession,
+  setLoginMethod
+} from "@/utils/login-session";
 
 export const useUserStore = defineStore("pure-user", {
   state: (): userType => ({
@@ -73,7 +79,10 @@ export const useUserStore = defineStore("pure-user", {
       return new Promise<UserResult>((resolve, reject) => {
         getLogin(data)
           .then(data => {
-            if (data?.success) setToken(data.data);
+            if (data?.success) {
+              setLoginMethod("password");
+              setToken(data.data);
+            }
             resolve(data);
           })
           .catch(error => {
@@ -83,6 +92,8 @@ export const useUserStore = defineStore("pure-user", {
     },
     /** 本地登出（IdP 已全局登出或其它 Tab 触发） */
     logOutLocal() {
+      skipAutoSso();
+      clearLoginMethod();
       this.username = "";
       this.roles = [];
       this.permissions = [];
@@ -93,9 +104,13 @@ export const useUserStore = defineStore("pure-user", {
       resetRouter();
       router.push("/login");
     },
-    /** 全局 SSO 登出：跳转 IdP end_session，销毁统一会话 */
+    /** SSO 会话全局登出；账密会话仅清本地 */
     logOut() {
-      performGlobalLogout();
+      if (isSsoSession()) {
+        performGlobalLogout();
+      } else {
+        this.logOutLocal();
+      }
     },
     /** 刷新`token` */
     async handRefreshToken(data) {

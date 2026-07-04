@@ -152,6 +152,7 @@
     document.cookie = "authorized-token=; Max-Age=0; path=/";
     document.cookie = "multiple-tabs=; Max-Age=0; path=/";
     localStorage.removeItem("user-info");
+    sessionStorage.removeItem("iam_client_login_method");
   }
 
   function resolvePostLogoutRedirectUri(cfg) {
@@ -238,6 +239,7 @@
       permissions: bootstrap.permissions || []
     };
     localStorage.setItem("user-info", JSON.stringify(userInfo));
+    sessionStorage.setItem("iam_client_login_method", "sso");
     sessionStorage.setItem("iam_sso_login_at", String(Date.now()));
   }
 

@@ -15,6 +15,7 @@ import { bg, avatar, illustration } from "./utils/static";
 import { useRenderIcon } from "@/components/ReIcon/src/hooks";
 import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
 import { useSsoLoginPage } from "./useSsoLoginPage";
+import { skipAutoSso } from "@/utils/oidc";
 
 import dayIcon from "@/assets/svg/day.svg?component";
 import darkIcon from "@/assets/svg/dark.svg?component";
@@ -36,14 +37,7 @@ const enterApp = () => {
   });
 };
 
-const {
-  phase,
-  statusText,
-  ssoBusy,
-  showPasswordForm,
-  onManualSsoLogin,
-  onUsePasswordLogin
-} = useSsoLoginPage(enterApp);
+const { statusText, ssoBusy, onManualSsoLogin } = useSsoLoginPage(enterApp);
 
 const { initStorage } = useLayout();
 initStorage();
@@ -65,6 +59,7 @@ const onLogin = async (formEl: FormInstance | undefined) => {
   if (!formEl) return;
   await formEl.validate(valid => {
     if (valid) {
+      skipAutoSso();
       loading.value = true;
       useUserStoreHook()
         .loginByUsername({
@@ -73,7 +68,6 @@ const onLogin = async (formEl: FormInstance | undefined) => {
         })
         .then(res => {
           if (res.success) {
-            // 获取后端路由
             return initRouter().then(() => {
               disabled.value = true;
               router
@@ -88,7 +82,10 @@ const onLogin = async (formEl: FormInstance | undefined) => {
           }
         })
         .catch(error => {
-          message(error?.response?.data?.message ?? error?.message ?? "登录失败", { type: "error" });
+          message(
+            error?.response?.data?.message ?? error?.message ?? "登录失败",
+            { type: "error" }
+          );
         })
         .finally(() => (loading.value = false));
     }
@@ -105,7 +102,8 @@ useEventListener(document, "keydown", ({ code }) => {
   if (
     ["Enter", "NumpadEnter"].includes(code) &&
     !disabled.value &&
-    !loading.value
+    !loading.value &&
+    !ssoBusy.value
   )
     immediateDebounce(ruleFormRef.value);
 });
@@ -115,7 +113,6 @@ useEventListener(document, "keydown", ({ code }) => {
   <div class="select-none">
     <img :src="bg" class="wave" />
     <div class="flex-c absolute right-5 top-3">
-      <!-- 主题 -->
       <el-switch
         v-model="dataTheme"
         inline-prompt
@@ -135,40 +132,14 @@ useEventListener(document, "keydown", ({ code }) => {
             <h2 class="outline-hidden">{{ title }}</h2>
           </Motion>
 
-          <Motion v-if="!showPasswordForm" :delay="100">
-            <p class="text-center text-gray-500 text-sm mb-4">
-              {{ statusText || "正在跳转 IAM 统一认证…" }}
-            </p>
-          </Motion>
-
-          <template v-if="!showPasswordForm">
-            <Motion :delay="200">
-              <el-button
-                class="w-full"
-                size="default"
-                type="primary"
-                :loading="ssoBusy || phase !== 'ready'"
-                :disabled="ssoBusy"
-                @click="onSsoLogin"
-              >
-                {{ ssoBusy ? "正在进入…" : "SSO 登录（IAM 统一认证）" }}
-              </el-button>
-            </Motion>
-            <Motion :delay="250">
-              <el-button
-                class="w-full mt-2!"
-                size="default"
-                link
-                type="primary"
-                @click="onUsePasswordLogin"
-              >
-                使用账密登录（非 SSO）
-              </el-button>
-            </Motion>
-          </template>
+          <p
+            v-if="ssoBusy"
+            class="text-center text-gray-500 text-sm mb-4"
+          >
+            {{ statusText || "正在跳转 IAM 统一认证…" }}
+          </p>
 
           <el-form
-            v-if="showPasswordForm"
             ref="ruleFormRef"
             :model="ruleForm"
             :rules="loginRules"
@@ -190,6 +161,7 @@ useEventListener(document, "keydown", ({ code }) => {
                   clearable
                   placeholder="账号"
                   :prefix-icon="useRenderIcon(User)"
+                  :disabled="ssoBusy"
                 />
               </el-form-item>
             </Motion>
@@ -202,6 +174,7 @@ useEventListener(document, "keydown", ({ code }) => {
                   show-password
                   placeholder="密码"
                   :prefix-icon="useRenderIcon(Lock)"
+                  :disabled="ssoBusy"
                 />
               </el-form-item>
             </Motion>
@@ -212,7 +185,7 @@ useEventListener(document, "keydown", ({ code }) => {
                 size="default"
                 type="primary"
                 :loading="loading"
-                :disabled="disabled"
+                :disabled="disabled || ssoBusy"
                 @click="onLogin(ruleFormRef)"
               >
                 账密登录
@@ -222,11 +195,11 @@ useEventListener(document, "keydown", ({ code }) => {
               <el-button
                 class="w-full mt-2!"
                 size="default"
-                link
-                type="primary"
+                :loading="ssoBusy"
+                :disabled="loading || ssoBusy"
                 @click="onSsoLogin"
               >
-                改用 SSO 登录
+                SSO 登录（IAM 统一认证）
               </el-button>
             </Motion>
           </el-form>

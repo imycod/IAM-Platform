@@ -389,8 +389,8 @@ const ERROR_MESSAGES = {
   invalid_credentials: 'Invalid email or password. Please try again.',
   missing_credentials: 'Please enter your email and password.',
   missing_uid: 'Invalid login session. Please start sign-in from your application again.',
-  interaction_expired: 'Login session expired. Resuming automatically…',
-  invalid_session: 'Login session expired. Resuming automatically…',
+  interaction_expired: 'Login session expired. Please return to your app and click SSO again.',
+  invalid_session: 'Login session expired. Please return to your app and click SSO again.',
 };
 
 function showLoginError(message) {

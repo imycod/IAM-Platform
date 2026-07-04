@@ -150,10 +150,21 @@ export class OidcService implements IOidcInteraction {
         AuthorizationCode: 300,
       },
       interactions: {
-        url: (_ctx: unknown, interaction: { uid: string }) =>
-          iamLoginUrl
-            ? `${iamLoginUrl}?uid=${encodeURIComponent(interaction.uid)}`
-            : `/${prefix}/interaction/${interaction.uid}`,
+        url: (
+          _ctx: unknown,
+          interaction: { uid: string; params?: Record<string, unknown> },
+        ) => {
+          if (!iamLoginUrl) {
+            return `/${prefix}/interaction/${interaction.uid}`;
+          }
+          const loginUrl = new URL(iamLoginUrl);
+          loginUrl.searchParams.set('uid', interaction.uid);
+          const clientId = interaction.params?.client_id;
+          if (typeof clientId === 'string' && clientId.length > 0) {
+            loginUrl.searchParams.set('client_id', clientId);
+          }
+          return loginUrl.toString();
+        },
       },
       /**
        * 演示环境：用户登录后自动建立 Grant 并授权请求的 scope，跳过 consent 确认页。

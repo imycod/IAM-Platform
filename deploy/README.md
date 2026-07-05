@@ -22,7 +22,7 @@ docker compose up -d
 
 # Nginx 网关
 cd ..
-docker compose -f deploy/docker-compose.nginx.yaml up -d
+docker compose -f docker-compose.nginx.yaml up -d
 ```
 
 ## 3. 启动应用（宿主机）
@@ -63,30 +63,30 @@ pnpm seed:oauth-flow-admin
 
 ## 5. 访问地址
 
-| 地址 | 说明 |
-|------|------|
-| http://admin.iam.local | iam-admin |
-| http://flow.iam.local | flow-admin |
-| http://login.iam.local | 统一登录 |
-| http://api.iam.local/api | IAM API |
+| 地址                     | 说明       |
+| ------------------------ | ---------- |
+| http://admin.iam.local   | iam-admin  |
+| http://flow.iam.local    | flow-admin |
+| http://login.iam.local   | 统一登录   |
+| http://api.iam.local/api | IAM API    |
 
 `public/config.js` 会根据 `*.iam.local` 自动切换 OIDC 配置，直连 `localhost:8848/8849` 仍可用。
 
 ## 6. 停止 Nginx
 
 ```powershell
-docker compose -f deploy/docker-compose.nginx.yaml down
+docker compose -f docker-compose.nginx.yaml down
 ```
 
 ## 7. 故障排查
 
 ### 访问 admin.iam.local 没有跳到 login.iam.local
 
-| 原因 | 处理 |
-|------|------|
-| IAM 用了 `pnpm start:dev` | 改用 `pnpm start:dev:nginx` 或 `pnpm dev:nginx` |
-| 浏览器已有 IAM 会话 | 会静默登录，不经过 4180；先清 `api.iam.local` 的 Cookie 再试 |
-| hosts / nginx 未生效 | 确认 `admin.iam.local` 能打开且反代到 8848 |
+| 原因                      | 处理                                                         |
+| ------------------------- | ------------------------------------------------------------ |
+| IAM 用了 `pnpm start:dev` | 改用 `pnpm start:dev:nginx` 或 `pnpm dev:nginx`              |
+| 浏览器已有 IAM 会话       | 会静默登录，不经过 4180；先清 `api.iam.local` 的 Cookie 再试 |
+| hosts / nginx 未生效      | 确认 `admin.iam.local` 能打开且反代到 8848                   |
 
 ### 已有 IAM 会话时
 

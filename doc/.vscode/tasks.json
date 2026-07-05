@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "flow-admin: build shared",
+      "type": "shell",
+      "command": "pnpm --filter @flow-admin/shared build",
+      "options": {
+        "cwd": "${workspaceFolder}/flow-admin"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

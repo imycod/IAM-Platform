@@ -129,9 +129,12 @@ export class DataPermissionService {
     await this.repo.softDelete({ id });
   }
 
-  async resolveForUser(userId: string, resource: string): Promise<ResolvedDataScope> {
-    const userRoles = await this.userRoleRepo.find({ where: { userId } });
-    const roleIds = userRoles.map((ur) => ur.roleId);
+  async resolveForUser(
+    userId: string,
+    resource: string,
+    applicationId?: string,
+  ): Promise<ResolvedDataScope> {
+    const roleIds = await this.resolveRoleIdsForUser(userId, applicationId);
     if (roleIds.length === 0) {
       return { scope: DataScope.SELF };
     }
@@ -205,8 +208,12 @@ export class DataPermissionService {
   /**
    * 标准化数据权限：输出可直接映射业务表字段的 filters（供 flow-admin 等业务系统消费）。
    */
-  async resolveFiltersForUser(userId: string, resource: string): Promise<ResolvedDataPermission> {
-    const scopeResult = await this.resolveForUser(userId, resource);
+  async resolveFiltersForUser(
+    userId: string,
+    resource: string,
+    applicationId?: string,
+  ): Promise<ResolvedDataPermission> {
+    const scopeResult = await this.resolveForUser(userId, resource, applicationId);
     const resourceEntity = await this.resourceService.findByCode(resource);
     return this.filterResolver.resolveWithOrgContext(
       userId,
@@ -214,6 +221,30 @@ export class DataPermissionService {
       scopeResult,
       resourceEntity?.attributes ?? null,
     );
+  }
+
+  /**
+   * 与 PermissionService.resolveUserPermissionCodes 一致：仅统计当前应用下的 user_role。
+   * 额外按 role.applicationId 过滤，避免 user_role.applicationId 缺失时跨应用串权。
+   */
+  private async resolveRoleIdsForUser(userId: string, applicationId?: string): Promise<string[]> {
+    const userRoles = await this.userRoleRepo.find({ where: { userId } });
+    const candidateIds = userRoles
+      .filter((ur) => !applicationId || !ur.applicationId || ur.applicationId === applicationId)
+      .map((ur) => ur.roleId);
+
+    if (candidateIds.length === 0) {
+      return [];
+    }
+
+    if (!applicationId) {
+      return candidateIds;
+    }
+
+    const roles = await this.roleRepo.find({ where: { id: In(candidateIds) } });
+    return roles
+      .filter((role) => !role.applicationId || role.applicationId === applicationId)
+      .map((role) => role.id);
   }
 
   private async attachRoleInfo(rows: DataPermissionEntity[]): Promise<DataPermissionListItem[]> {

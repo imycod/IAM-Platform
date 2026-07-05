@@ -46,10 +46,16 @@ export class UserContextController {
       throw new ForbiddenException('resource 必填');
     }
     await this.applicationService.assertUserCanAccess(applicationId, req.user.id);
-    const scope = await this.dataPermissionService.resolveForUser(req.user.id, resource.trim());
+    const resourceCode = resource.trim();
+    const scope = await this.dataPermissionService.resolveForUser(
+      req.user.id,
+      resourceCode,
+      applicationId,
+    );
     const filters = await this.dataPermissionService.resolveFiltersForUser(
       req.user.id,
-      resource.trim(),
+      resourceCode,
+      applicationId,
     );
     return { ...scope, filters: filters.filters, groups: filters.groups, unrestricted: filters.unrestricted, denyAll: filters.denyAll };
   }
@@ -68,6 +74,10 @@ export class UserContextController {
       throw new ForbiddenException('resource 必填');
     }
     await this.applicationService.assertUserCanAccess(applicationId, req.user.id);
-    return this.dataPermissionService.resolveFiltersForUser(req.user.id, resource.trim());
+    return this.dataPermissionService.resolveFiltersForUser(
+      req.user.id,
+      resource.trim(),
+      applicationId,
+    );
   }
 }

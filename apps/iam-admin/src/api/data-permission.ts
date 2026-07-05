@@ -9,6 +9,8 @@ export interface DataPermissionItem {
   resource: string;
   scope: DataScope;
   customExpr: Record<string, unknown> | null;
+  /** scope=all 时 true=跨组织可见 */
+  unrestricted?: boolean;
   roleName?: string | null;
   roleCode?: string | null;
   resourceName?: string | null;
@@ -21,6 +23,7 @@ export interface DataPermissionForm {
   resource: string;
   scope: DataScope;
   customExpr?: Record<string, unknown> | null;
+  unrestricted?: boolean;
 }
 
 export const getDataPermissions = (params?: {

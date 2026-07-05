@@ -31,7 +31,7 @@ export interface DataFilterGroup {
 export interface ResolvedDataPermission {
   resource: string;
   scope: string;
-  /** scope=all，业务侧无需追加 where */
+  /** scope=all 且无 filters 时 true=跨组织全量；false=仅本组织内全部（由 filters 中的 organization_id 体现） */
   unrestricted: boolean;
   /** 无任何可见数据 */
   denyAll: boolean;

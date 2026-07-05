@@ -18,19 +18,30 @@ export interface ResolvedDataScopePart {
   scope: DataScope;
   departmentIds?: string[];
   customExpr?: Record<string, unknown> | null;
+  /** scope=all 且 data_permission.unrestricted=true 时为跨组织全量 */
+  crossOrgUnrestricted?: boolean;
 }
 
 export interface ResolvedDataScope {
   scope: DataScope;
   departmentIds?: string[];
   customExpr?: Record<string, unknown> | null;
+  crossOrgUnrestricted?: boolean;
   /** 多角色数据权限 OR 并集；仅当存在多条有效规则时填充 */
   unionParts?: ResolvedDataScopePart[];
 }
 
 export type DataPermissionListItem = Pick<
   DataPermissionEntity,
-  'id' | 'roleId' | 'resource' | 'scope' | 'customExpr' | 'createdAt' | 'updatedAt' | 'deletedAt'
+  | 'id'
+  | 'roleId'
+  | 'resource'
+  | 'scope'
+  | 'customExpr'
+  | 'unrestricted'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'deletedAt'
 > & {
   roleName?: string | null;
   roleCode?: string | null;
@@ -88,6 +99,7 @@ export class DataPermissionService {
         resource: resourceCode,
         scope: dto.scope,
         customExpr: dto.scope === DataScope.CUSTOM ? dto.customExpr ?? null : null,
+        unrestricted: dto.scope === DataScope.ALL ? dto.unrestricted ?? false : false,
       }),
     );
     const [enriched] = await this.attachRoleInfo([saved]);
@@ -118,6 +130,11 @@ export class DataPermissionService {
       const scope = dto.scope ?? row.scope;
       row.customExpr = scope === DataScope.CUSTOM ? dto.customExpr ?? row.customExpr ?? null : null;
     }
+    if (dto.scope !== undefined || dto.unrestricted !== undefined) {
+      const scope = dto.scope ?? row.scope;
+      row.unrestricted =
+        scope === DataScope.ALL ? dto.unrestricted ?? row.unrestricted ?? false : false;
+    }
 
     const saved = await this.repo.save(row);
     const [enriched] = await this.attachRoleInfo([saved]);
@@ -145,7 +162,12 @@ export class DataPermissionService {
     }
 
     if (rows.some((row) => row.scope === DataScope.ALL)) {
-      return { scope: DataScope.ALL };
+      return {
+        scope: DataScope.ALL,
+        crossOrgUnrestricted: rows.some(
+          (row) => row.scope === DataScope.ALL && row.unrestricted,
+        ),
+      };
     }
 
     const parts = await Promise.all(rows.map((row) => this.toScopePart(row, userId)));
@@ -168,6 +190,8 @@ export class DataPermissionService {
     const part: ResolvedDataScopePart = {
       scope: row.scope,
       customExpr: row.scope === DataScope.CUSTOM ? row.customExpr : null,
+      crossOrgUnrestricted:
+        row.scope === DataScope.ALL ? row.unrestricted : undefined,
     };
 
     if (
@@ -185,16 +209,17 @@ export class DataPermissionService {
       scope: part.scope,
       departmentIds: part.departmentIds,
       customExpr: part.customExpr,
+      crossOrgUnrestricted: part.crossOrgUnrestricted,
     };
   }
 
-  /** 去掉 scope + customExpr 完全相同的重复规则 */
+  /** 去掉 scope + customExpr + crossOrg 完全相同的重复规则 */
   private deduplicateScopeParts(parts: ResolvedDataScopePart[]): ResolvedDataScopePart[] {
     const seen = new Set<string>();
     const result: ResolvedDataScopePart[] = [];
 
     for (const part of parts) {
-      const key = `${part.scope}:${JSON.stringify(part.customExpr ?? null)}`;
+      const key = `${part.scope}:${part.crossOrgUnrestricted ?? false}:${JSON.stringify(part.customExpr ?? null)}`;
       if (seen.has(key)) {
         continue;
       }

@@ -29,7 +29,7 @@ const scopeOptions: { label: string; value: DataScope; hint: string }[] = [
     value: "dept_and_child",
     hint: "可访问本部门及下级部门数据"
   },
-  { label: "全部", value: "all", hint: "可访问该资源下的全部数据" },
+  { label: "全部", value: "all", hint: "默认仅当前组织内全部数据；可开启跨组织 unrestricted" },
   { label: "自定义", value: "custom", hint: "只需修改 filters[0].value 字段" }
 ];
 
@@ -124,6 +124,13 @@ const columns: TableColumnList = [
     formatter: ({ scope }) => scopeLabelMap[scope as DataScope] ?? scope
   },
   {
+    label: "跨组织",
+    prop: "unrestricted",
+    minWidth: 90,
+    formatter: ({ scope, unrestricted }) =>
+      scope === "all" ? (unrestricted ? "是" : "否") : "-"
+  },
+  {
     label: "自定义表达式",
     prop: "customExpr",
     minWidth: 200,
@@ -150,10 +157,12 @@ const formModel = reactive<DataPermissionForm & { customExprText: string }>({
   resource: "",
   scope: "self",
   customExpr: null,
-  customExprText: ""
+  customExprText: "",
+  unrestricted: false
 });
 
 const showCustomExpr = computed(() => formModel.scope === "custom");
+const showUnrestricted = computed(() => formModel.scope === "all");
 
 const currentScopeHint = computed(
   () => scopeOptions.find(item => item.value === formModel.scope)?.hint ?? ""
@@ -189,6 +198,9 @@ const formRules: FormRules = {
 watch(
   () => formModel.scope,
   scope => {
+    if (scope !== "all") {
+      formModel.unrestricted = false;
+    }
     if (scope !== "custom") {
       formModel.customExprText = "";
       formModel.customExpr = null;
@@ -267,6 +279,7 @@ function resetForm() {
   formModel.scope = "self";
   formModel.customExpr = null;
   formModel.customExprText = "";
+  formModel.unrestricted = false;
   editingId.value = null;
   formRef.value?.clearValidate();
 }
@@ -288,6 +301,7 @@ async function openEditDialog(row: DataPermissionItem) {
     formModel.resource = detail.resource;
     formModel.scope = detail.scope;
     formModel.customExpr = detail.customExpr;
+    formModel.unrestricted = detail.unrestricted ?? false;
     formModel.customExprText = detail.customExpr
       ? JSON.stringify(detail.customExpr, null, 2)
       : formatCustomExprText(detail.resource);
@@ -308,7 +322,8 @@ function buildCreatePayload(): DataPermissionForm {
     customExpr:
       formModel.scope === "custom"
         ? JSON.parse(formModel.customExprText)
-        : null
+        : null,
+    unrestricted: formModel.scope === "all" ? formModel.unrestricted : false
   };
 }
 
@@ -318,7 +333,8 @@ function buildUpdatePayload(): Partial<DataPermissionForm> {
     customExpr:
       formModel.scope === "custom"
         ? JSON.parse(formModel.customExprText)
-        : null
+        : null,
+    unrestricted: formModel.scope === "all" ? formModel.unrestricted : false
   };
 }
 
@@ -538,6 +554,16 @@ onMounted(async () => {
             />
           </el-select>
           <p v-if="currentScopeHint" class="scope-hint">{{ currentScopeHint }}</p>
+        </el-form-item>
+        <el-form-item v-if="showUnrestricted" label="跨组织">
+          <el-switch
+            v-model="formModel.unrestricted"
+            active-text="unrestricted（跨组织全量）"
+            inactive-text="仅本组织内全部"
+          />
+          <p class="scope-hint">
+            开启后与旧版「全部」一致，可跨 organization 查看；平台管理员按需开启。
+          </p>
         </el-form-item>
         <el-form-item
           v-if="showCustomExpr"

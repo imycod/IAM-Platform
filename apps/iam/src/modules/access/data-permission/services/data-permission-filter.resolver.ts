@@ -57,7 +57,11 @@ export class DataPermissionFilterResolver {
     };
 
     if (scopeResult.scope === DataScope.ALL) {
-      return { ...base, unrestricted: true, filters: [] };
+      if (scopeResult.crossOrgUnrestricted) {
+        return { ...base, unrestricted: true, filters: [] };
+      }
+      // 组织内全部：不加 unrestricted，由 resolveWithOrgContext 追加 organization_id 过滤
+      return { ...base, unrestricted: false, filters: [] };
     }
 
     if (scopeResult.scope === DataScope.CUSTOM) {
@@ -194,18 +198,40 @@ export class DataPermissionFilterResolver {
 
     const resolved = this.resolve(userId, resource, scopeResult, mapping, orgContext ?? undefined);
 
-    if (
-      orgContext?.organizationId &&
-      mapping.orgField &&
-      !resolved.unrestricted &&
-      !resolved.denyAll
-    ) {
+    return this.applyOrganizationTenantBoundary(resolved, scopeResult, mapping, orgContext);
+  }
+
+  /**
+   * 组织租户边界：非 cross-org 的 scope 均叠加 organization_id；
+   * scope=all 且未开启 unrestricted 时，无员工组织上下文则 denyAll。
+   */
+  private applyOrganizationTenantBoundary(
+    resolved: ResolvedDataPermission,
+    scopeResult: ResolvedDataScope,
+    mapping: ResourceDataPermissionFieldMapping,
+    orgContext?: { organizationId?: string | null; departmentId?: string | null } | null,
+  ): ResolvedDataPermission {
+    if (resolved.unrestricted || resolved.denyAll || !mapping.orgField) {
+      return resolved;
+    }
+
+    if (orgContext?.organizationId) {
       resolved.filters.unshift({
         field: mapping.orgField,
         operator: '=',
         value: orgContext.organizationId,
       });
+      return resolved;
     }
+
+    if (scopeResult.scope === DataScope.ALL && !scopeResult.crossOrgUnrestricted) {
+      return {
+        ...resolved,
+        denyAll: true,
+        filters: [{ field: '1', operator: '=', value: 0 }],
+      };
+    }
+
     return resolved;
   }
 

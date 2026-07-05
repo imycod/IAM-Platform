@@ -27,4 +27,10 @@ export class DataPermissionEntity extends BaseEntity {
 
   @Column({ type: 'json', nullable: true })
   customExpr: Record<string, unknown> | null;
+
+  /**
+   * 仅 scope=all 时生效。true=跨组织（平台级全量）；false=当前组织内全部（租户边界，默认）。
+   */
+  @Column({ type: 'boolean', default: false })
+  unrestricted: boolean;
 }

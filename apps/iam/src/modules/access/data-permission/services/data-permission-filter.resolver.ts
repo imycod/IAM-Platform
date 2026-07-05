@@ -7,8 +7,9 @@ import type {
 } from '@app/contracts';
 import { ORGANIZATION_QUERY, type IOrganizationQuery } from '@app/contracts';
 import { DataScope } from '../entities/data-permission.entity';
-import type { ResolvedDataScope } from '../services/data-permission.service';
+import type { ResolvedDataScope, ResolvedDataScopePart } from '../services/data-permission.service';
 import { resolveResourceFieldMapping } from '../utils/resource-field-mapping';
+import { normalizeCustomExpr } from '../utils/custom-expr.util';
 
 @Injectable()
 export class DataPermissionFilterResolver {
@@ -25,6 +26,20 @@ export class DataPermissionFilterResolver {
     fieldMapping: ResourceDataPermissionFieldMapping,
     orgContext?: { organizationId?: string | null; departmentId?: string | null },
   ): ResolvedDataPermission {
+    if (scopeResult.unionParts && scopeResult.unionParts.length > 1) {
+      return this.resolveUnion(userId, resource, scopeResult, fieldMapping, orgContext);
+    }
+
+    return this.resolveSingle(userId, resource, scopeResult, fieldMapping, orgContext);
+  }
+
+  private resolveSingle(
+    userId: string,
+    resource: string,
+    scopeResult: ResolvedDataScope | ResolvedDataScopePart,
+    fieldMapping: ResourceDataPermissionFieldMapping,
+    orgContext?: { organizationId?: string | null; departmentId?: string | null },
+  ): ResolvedDataPermission {
     const base: ResolvedDataPermission = {
       resource,
       scope: scopeResult.scope,
@@ -35,6 +50,7 @@ export class DataPermissionFilterResolver {
       meta: {
         userId,
         organizationId: orgContext?.organizationId ?? null,
+        departmentId: orgContext?.departmentId ?? null,
         departmentIds: scopeResult.departmentIds,
         customExpr: scopeResult.customExpr ?? null,
       },
@@ -59,6 +75,94 @@ export class DataPermissionFilterResolver {
     return this.resolveSelf(base, userId, fieldMapping);
   }
 
+  private resolveUnion(
+    userId: string,
+    resource: string,
+    scopeResult: ResolvedDataScope,
+    fieldMapping: ResourceDataPermissionFieldMapping,
+    orgContext?: { organizationId?: string | null; departmentId?: string | null },
+  ): ResolvedDataPermission {
+    const parts = scopeResult.unionParts ?? [];
+    const resolvedParts = parts.map((part) =>
+      this.resolveSingle(userId, resource, part, fieldMapping, orgContext),
+    );
+
+    if (resolvedParts.some((part) => part.unrestricted)) {
+      return {
+        resource,
+        scope: DataScope.ALL,
+        unrestricted: true,
+        denyAll: false,
+        logic: 'and',
+        filters: [],
+        meta: {
+          userId,
+          organizationId: orgContext?.organizationId ?? null,
+          departmentId: orgContext?.departmentId ?? null,
+        },
+      };
+    }
+
+    const visibleParts = resolvedParts.filter((part) => !part.denyAll);
+    if (visibleParts.length === 0) {
+      return {
+        resource,
+        scope: scopeResult.scope,
+        unrestricted: false,
+        denyAll: true,
+        logic: 'and',
+        filters: [{ field: '1', operator: '=', value: 0 }],
+        meta: {
+          userId,
+          organizationId: orgContext?.organizationId ?? null,
+          departmentId: orgContext?.departmentId ?? null,
+        },
+      };
+    }
+
+    const unionBranches: DataFilterGroup[] = visibleParts.flatMap((part) =>
+      this.toUnionBranch(part),
+    );
+
+    const base: ResolvedDataPermission = {
+      resource,
+      scope: scopeResult.scope,
+      unrestricted: false,
+      denyAll: false,
+      logic: 'and',
+      filters: [],
+      groups: [{ logic: 'or', filters: unionBranches }],
+      meta: {
+        userId,
+        organizationId: orgContext?.organizationId ?? null,
+        departmentId: orgContext?.departmentId ?? null,
+        departmentIds: this.collectDepartmentIds(parts),
+      },
+    };
+
+    return base;
+  }
+
+  private toUnionBranch(part: ResolvedDataPermission): DataFilterGroup[] {
+    if (part.groups?.length) {
+      return part.groups;
+    }
+    if (part.filters.length > 0) {
+      return [{ logic: part.logic, filters: part.filters }];
+    }
+    return [];
+  }
+
+  private collectDepartmentIds(parts: ResolvedDataScopePart[]): string[] {
+    const ids = new Set<string>();
+    for (const part of parts) {
+      for (const id of part.departmentIds ?? []) {
+        ids.add(id);
+      }
+    }
+    return [...ids];
+  }
+
   async resolveWithOrgContext(
     userId: string,
     resource: string,
@@ -69,9 +173,15 @@ export class DataPermissionFilterResolver {
     const orgContext = this.organizationQuery
       ? await this.organizationQuery.getUserOrgContext(userId)
       : null;
-
     let departmentIds = scopeResult.departmentIds;
-    if (
+    if (scopeResult.unionParts?.length) {
+      scopeResult = {
+        ...scopeResult,
+        unionParts: await Promise.all(
+          scopeResult.unionParts.map(async (part) => this.enrichScopePart(userId, part)),
+        ),
+      };
+    } else if (
       (scopeResult.scope === DataScope.DEPT || scopeResult.scope === DataScope.DEPT_AND_CHILD) &&
       this.organizationQuery
     ) {
@@ -84,15 +194,36 @@ export class DataPermissionFilterResolver {
 
     const resolved = this.resolve(userId, resource, scopeResult, mapping, orgContext ?? undefined);
 
-    if (orgContext?.organizationId && mapping.orgField && !resolved.unrestricted && !resolved.denyAll) {
+    if (
+      orgContext?.organizationId &&
+      mapping.orgField &&
+      !resolved.unrestricted &&
+      !resolved.denyAll
+    ) {
       resolved.filters.unshift({
         field: mapping.orgField,
         operator: '=',
         value: orgContext.organizationId,
       });
     }
-
     return resolved;
+  }
+
+  private async enrichScopePart(
+    userId: string,
+    part: ResolvedDataScopePart,
+  ): Promise<ResolvedDataScopePart> {
+    if (
+      (part.scope === DataScope.DEPT || part.scope === DataScope.DEPT_AND_CHILD) &&
+      this.organizationQuery
+    ) {
+      const departmentIds = await this.organizationQuery.getAccessibleDepartmentIds(
+        userId,
+        part.scope === DataScope.DEPT_AND_CHILD,
+      );
+      return { ...part, departmentIds };
+    }
+    return part;
   }
 
   private resolveSelf(
@@ -163,19 +294,22 @@ export class DataPermissionFilterResolver {
       return { ...base, denyAll: true, filters: [{ field: '1', operator: '=', value: 0 }] };
     }
 
-    const filters = (customExpr.filters as DataFilterCondition[] | undefined) ?? [];
-    const logic = (customExpr.logic as 'and' | 'or' | undefined) ?? 'and';
-    const groups = customExpr.groups as DataFilterGroup[] | undefined;
+    const normalized = normalizeCustomExpr(customExpr, {
+      userId: base.meta?.userId,
+      departmentId: base.meta?.departmentId,
+      organizationId: base.meta?.organizationId,
+    });
 
-    if (filters.length === 0 && (!groups || groups.length === 0)) {
+    if (!normalized) {
       return { ...base, denyAll: true, filters: [{ field: '1', operator: '=', value: 0 }] };
     }
 
     return {
       ...base,
-      logic,
-      filters,
-      groups,
+      denyAll: false,
+      logic: normalized.logic,
+      filters: normalized.filters,
+      groups: normalized.groups,
     };
   }
 }

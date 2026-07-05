@@ -9,6 +9,7 @@
     "start": "nest start iam",
     "start:dev": "cross-env NODE_ENV=development nest start iam --watch",
     "start:dev:nginx": "cross-env NODE_ENV=nginx nest start iam --watch",
+    "start:debug:nginx": "cross-env NODE_ENV=nginx nest start iam --debug --watch",
     "dev:nginx": "node run-nginx.js",
     "start:debug": "cross-env NODE_ENV=development nest start iam --debug --watch",
     "start:prod": "cross-env NODE_ENV=production node dist/apps/iam/main",

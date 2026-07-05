@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   ORGANIZATION_QUERY,
   type IOrganizationQuery,
@@ -43,13 +43,10 @@ export class OrganizationQueryService implements IOrganizationQuery {
     if (led.length === 0) {
       return [];
     }
-    const ids = new Set<string>(led.map((d) => d.id));
+    const ids = new Set<string>();
     for (const dept of led) {
-      if (dept.path) {
-        const children = await this.departmentRepo.find({
-          where: { path: Like(`${dept.path}%`) },
-        });
-        children.forEach((c) => ids.add(c.id));
+      for (const id of await this.collectSubtreeDepartmentIds(dept.id, dept.organizationId)) {
+        ids.add(id);
       }
     }
     return [...ids];
@@ -69,13 +66,48 @@ export class OrganizationQueryService implements IOrganizationQuery {
     }
 
     const ownDept = await this.departmentRepo.findOne({ where: { id: emp.departmentId } });
-    if (ownDept?.path) {
-      const subtree = await this.departmentRepo.find({
-        where: { path: Like(`${ownDept.path}%`) },
-      });
-      subtree.forEach((d) => ids.add(d.id));
+    if (!ownDept) {
+      return [...ids];
+    }
+
+    for (const id of await this.collectSubtreeDepartmentIds(ownDept.id, ownDept.organizationId)) {
+      ids.add(id);
     }
 
     return [...ids];
+  }
+
+  /** 按 parentId BFS 收集子树；path 历史数据有误时仍以 parentId 为准 */
+  private async collectSubtreeDepartmentIds(
+    rootId: string,
+    organizationId: string,
+  ): Promise<string[]> {
+    const all = await this.departmentRepo.find({ where: { organizationId } });
+    const childrenByParent = new Map<string | null, string[]>();
+
+    for (const dept of all) {
+      const parentId = dept.parentId ?? null;
+      const siblings = childrenByParent.get(parentId) ?? [];
+      siblings.push(dept.id);
+      childrenByParent.set(parentId, siblings);
+    }
+
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    const queue = [rootId];
+
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      ids.push(id);
+      for (const childId of childrenByParent.get(id) ?? []) {
+        queue.push(childId);
+      }
+    }
+
+    return ids;
   }
 }

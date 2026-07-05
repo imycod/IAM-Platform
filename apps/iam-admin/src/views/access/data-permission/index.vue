@@ -30,12 +30,57 @@ const scopeOptions: { label: string; value: DataScope; hint: string }[] = [
     hint: "可访问本部门及下级部门数据"
   },
   { label: "全部", value: "all", hint: "可访问该资源下的全部数据" },
-  { label: "自定义", value: "custom", hint: "通过 JSON 表达式定义过滤条件" }
+  { label: "自定义", value: "custom", hint: "只需修改 filters[0].value 字段" }
 ];
 
 const scopeLabelMap = Object.fromEntries(
   scopeOptions.map(item => [item.value, item.label])
 ) as Record<DataScope, string>;
+
+/** 与 IAM 默认 field mapping 对齐，custom 模板默认字段 */
+const CUSTOM_FIELD_BY_RESOURCE: Record<string, string> = {
+  "flow_admin:products": "creator_id",
+  "flow_admin:materials": "creator_id",
+  "flow_admin:tasks": "assignee_id"
+};
+
+function resolveCustomField(resource: string): string {
+  return CUSTOM_FIELD_BY_RESOURCE[resource] ?? "creator_id";
+}
+
+function buildCustomExpr(resource: string, value = ""): Record<string, unknown> {
+  return {
+    logic: "and",
+    filters: [
+      {
+        field: resolveCustomField(resource),
+        operator: "=",
+        value
+      }
+    ]
+  };
+}
+
+function formatCustomExprText(resource: string, value = ""): string {
+  return JSON.stringify(buildCustomExpr(resource, value), null, 2);
+}
+
+function syncCustomExprField(
+  parsed: Record<string, unknown>,
+  resource: string
+): boolean {
+  const field = resolveCustomField(resource);
+  if (typeof parsed.field === "string" && parsed.op === "eq") {
+    parsed.field = field;
+    return true;
+  }
+  const filters = parsed.filters;
+  if (Array.isArray(filters) && filters[0] && typeof filters[0] === "object") {
+    (filters[0] as Record<string, unknown>).field = field;
+    return true;
+  }
+  return false;
+}
 
 const resourceOptions = ref<ResourceItem[]>([]);
 
@@ -147,6 +192,32 @@ watch(
     if (scope !== "custom") {
       formModel.customExprText = "";
       formModel.customExpr = null;
+      return;
+    }
+    if (!formModel.customExprText.trim()) {
+      formModel.customExprText = formatCustomExprText(formModel.resource);
+    }
+  }
+);
+
+watch(
+  () => formModel.resource,
+  resource => {
+    if (formModel.scope !== "custom" || !resource) return;
+    if (!formModel.customExprText.trim()) {
+      formModel.customExprText = formatCustomExprText(resource);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(formModel.customExprText) as Record<
+        string,
+        unknown
+      >;
+      if (syncCustomExprField(parsed, resource)) {
+        formModel.customExprText = JSON.stringify(parsed, null, 2);
+      }
+    } catch {
+      /* 用户已手动编辑，不覆盖 */
     }
   }
 );
@@ -219,7 +290,7 @@ async function openEditDialog(row: DataPermissionItem) {
     formModel.customExpr = detail.customExpr;
     formModel.customExprText = detail.customExpr
       ? JSON.stringify(detail.customExpr, null, 2)
-      : "";
+      : formatCustomExprText(detail.resource);
   } catch (error: any) {
     message(
       error?.response?.data?.message ?? error?.message ?? "加载详情失败",
@@ -477,8 +548,11 @@ onMounted(async () => {
             v-model="formModel.customExprText"
             type="textarea"
             :rows="6"
-            placeholder='如 {"field":"owner_id","op":"eq","value":"${userId}"}'
+            placeholder='只需修改 filters[0].value，如 ${userId}；留空 "" 表示匹配空值'
           />
+          <p class="scope-hint">
+            支持变量：<code>${userId}</code>、<code>${departmentId}</code>、<code>${organizationId}</code>
+          </p>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -503,5 +577,12 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   line-height: 1.4;
+
+  code {
+    padding: 0 4px;
+    font-size: 11px;
+    background: var(--el-fill-color-light);
+    border-radius: 3px;
+  }
 }
 </style>

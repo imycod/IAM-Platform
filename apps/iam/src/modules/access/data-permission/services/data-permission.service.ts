@@ -1,18 +1,31 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { ORGANIZATION_QUERY, type IOrganizationQuery, type ResolvedDataPermission } from '@app/contracts';
+import {
+  ORGANIZATION_QUERY,
+  type IOrganizationQuery,
+  type ResolvedDataPermission,
+} from '@app/contracts';
 import { ResourceService } from '../../resource/services/resource.service';
 import { RoleEntity } from '../../role/entities/role.entity';
 import { UserRoleEntity } from '../../role/entities/user-role.entity';
 import { DataPermissionEntity, DataScope } from '../entities/data-permission.entity';
 import { CreateDataPermissionDto, UpdateDataPermissionDto } from '../dto/data-permission.dto';
 import { DataPermissionFilterResolver } from './data-permission-filter.resolver';
+import { pickWidestScope } from '../utils/data-scope-weight';
+
+export interface ResolvedDataScopePart {
+  scope: DataScope;
+  departmentIds?: string[];
+  customExpr?: Record<string, unknown> | null;
+}
 
 export interface ResolvedDataScope {
   scope: DataScope;
   departmentIds?: string[];
   customExpr?: Record<string, unknown> | null;
+  /** 多角色数据权限 OR 并集；仅当存在多条有效规则时填充 */
+  unionParts?: ResolvedDataScopePart[];
 }
 
 export type DataPermissionListItem = Pick<
@@ -128,21 +141,64 @@ export class DataPermissionService {
       return { scope: DataScope.SELF };
     }
 
-    const order = [DataScope.SELF, DataScope.DEPT, DataScope.DEPT_AND_CHILD, DataScope.ALL];
-    let widest = rows[0];
-    for (const row of rows) {
-      if (order.indexOf(row.scope) > order.indexOf(widest.scope)) {
-        widest = row;
-      }
+    if (rows.some((row) => row.scope === DataScope.ALL)) {
+      return { scope: DataScope.ALL };
     }
 
-    const result: ResolvedDataScope = { scope: widest.scope, customExpr: widest.customExpr };
+    const parts = await Promise.all(rows.map((row) => this.toScopePart(row, userId)));
+    const dedupedParts = this.deduplicateScopeParts(parts);
+
+    if (dedupedParts.length === 1) {
+      return this.partToResolvedScope(dedupedParts[0]);
+    }
+
+    return {
+      scope: pickWidestScope(dedupedParts.map((part) => part.scope)),
+      unionParts: dedupedParts,
+    };
+  }
+
+  private async toScopePart(
+    row: DataPermissionEntity,
+    userId: string,
+  ): Promise<ResolvedDataScopePart> {
+    const part: ResolvedDataScopePart = {
+      scope: row.scope,
+      customExpr: row.scope === DataScope.CUSTOM ? row.customExpr : null,
+    };
+
     if (
-      (widest.scope === DataScope.DEPT || widest.scope === DataScope.DEPT_AND_CHILD) &&
+      (row.scope === DataScope.DEPT || row.scope === DataScope.DEPT_AND_CHILD) &&
       this.organizationQuery
     ) {
-      result.departmentIds = await this.organizationQuery.getManagedDepartmentIds(userId);
+      part.departmentIds = await this.organizationQuery.getManagedDepartmentIds(userId);
     }
+
+    return part;
+  }
+
+  private partToResolvedScope(part: ResolvedDataScopePart): ResolvedDataScope {
+    return {
+      scope: part.scope,
+      departmentIds: part.departmentIds,
+      customExpr: part.customExpr,
+    };
+  }
+
+  /** 去掉 scope + customExpr 完全相同的重复规则 */
+  private deduplicateScopeParts(parts: ResolvedDataScopePart[]): ResolvedDataScopePart[] {
+    const seen = new Set<string>();
+    const result: ResolvedDataScopePart[] = [];
+
+    for (const part of parts) {
+      const key = `${part.scope}:${JSON.stringify(part.customExpr ?? null)}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(part);
+    }
+
     return result;
   }
 
@@ -172,9 +228,7 @@ export class DataPermissionService {
     const resources = await Promise.all(
       resourceCodes.map((code) => this.resourceService.findByCode(code)),
     );
-    const resourceMap = new Map(
-      resources.filter(Boolean).map((r) => [r!.code, r!.name]),
-    );
+    const resourceMap = new Map(resources.filter(Boolean).map((r) => [r!.code, r!.name]));
 
     return rows.map((row) => ({
       ...row,

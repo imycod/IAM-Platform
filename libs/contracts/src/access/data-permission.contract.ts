@@ -42,6 +42,8 @@ export interface ResolvedDataPermission {
   meta?: {
     userId?: string;
     organizationId?: string | null;
+    /** 当前用户所属部门（employee.departmentId），用于业务写入 dept_id */
+    departmentId?: string | null;
     departmentIds?: string[];
     customExpr?: Record<string, unknown> | null;
   };

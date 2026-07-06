@@ -11,7 +11,6 @@ import { useTimeoutFn } from "@vueuse/core";
 import {
   isString,
   cloneDeep,
-  isAllEmpty,
   intersection,
   storageLocal,
   isIncludeAllChildren
@@ -69,27 +68,22 @@ function resolveFirstLeafPath(route: RouteRecordRaw): string | undefined {
 // 动态路由
 import { getAsyncRoutes } from "@/api/routes";
 
-function handRank(routeInfo: any) {
-  const { name, path, parentId, meta } = routeInfo;
-  return isAllEmpty(parentId)
-    ? isAllEmpty(meta?.rank) ||
-      (meta?.rank === 0 && name !== "Home" && path !== "/")
-      ? true
-      : false
-    : false;
+/** 与 IAM application_menu.sort 对齐：rank 越小越靠前（0 → 1 → 2 → 3 …） */
+function getRouteRank(route: { meta?: { rank?: number } }): number {
+  const rank = route.meta?.rank;
+  return rank === undefined || rank === null ? Number.MAX_SAFE_INTEGER : rank;
 }
 
-/** 按照路由中meta下的rank等级升序来排序路由 */
-function ascending(arr: any[]) {
-  arr.forEach((v, index) => {
-    // 当rank不存在时，根据顺序自动创建，首页路由永远在第一位
-    if (handRank(v)) v.meta.rank = index + 2;
-  });
-  return arr.sort(
-    (a: { meta: { rank: number } }, b: { meta: { rank: number } }) => {
-      return a?.meta.rank - b?.meta.rank;
-    }
+/** 按 meta.rank 升序排序（含子菜单）；完全信任后端 rank，含 0 */
+function ascending(arr: any[]): any[] {
+  arr.sort(
+    (a: { meta?: { rank?: number } }, b: { meta?: { rank?: number } }) =>
+      getRouteRank(a) - getRouteRank(b)
   );
+  arr.forEach(v => {
+    if (v.children?.length) ascending(v.children);
+  });
+  return arr;
 }
 
 /** 过滤meta中showLink为false的菜单 */

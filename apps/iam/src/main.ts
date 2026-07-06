@@ -27,8 +27,8 @@ async function bootstrap(): Promise<void> {
     'http://127.0.0.1:8848',
     'http://127.0.0.1:8849',
     'http://localhost:8849',
-    'http://localhost:4180',
-    'http://127.0.0.1:4180',
+    'http://localhost:3100',
+    'http://127.0.0.1:3100',
     // Nginx 子域模拟（deploy/nginx）
     'http://login.iam.local',
     'http://api.iam.local',

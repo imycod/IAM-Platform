@@ -1,11 +1,13 @@
 /**
- * iam-login 静态文件服务（零依赖），默认 http://localhost:4180
+ * iam-login 静态文件服务（零依赖），默认 http://127.0.0.1:3100
+ * 注意：Windows Hyper-V/Docker 常保留 4126–4225，4180 会 EACCES，勿改回该段端口。
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = Number(process.env.IAM_LOGIN_PORT || 4180);
+const PORT = Number(3100);
+const HOST = process.env.IAM_LOGIN_HOST || '127.0.0.1';
 const ROOT = __dirname;
 
 const MIME = {
@@ -40,7 +42,22 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.on('error', (err) => {
+  if (err.code === 'EACCES') {
+    // eslint-disable-next-line no-console
+    console.error(
+      `iam-login: 无法绑定 ${HOST}:${PORT}（EACCES）。` +
+        ' Windows 可能保留了该端口段（netsh interface ipv4 show excludedportrange protocol=tcp）。' +
+        ' 请设置环境变量 IAM_LOGIN_PORT 为未保留端口（如 3100），并同步 deploy/nginx/conf.d/iam.conf。',
+    );
+  } else if (err.code === 'EADDRINUSE') {
+    // eslint-disable-next-line no-console
+    console.error(`iam-login: 端口 ${PORT} 已被占用，请更换 IAM_LOGIN_PORT。`);
+  }
+  process.exit(1);
+});
+
+server.listen(PORT, HOST, () => {
   // eslint-disable-next-line no-console
-  console.log(`iam-login: http://localhost:${PORT}`);
+  console.log(`iam-login: http://${HOST}:${PORT}`);
 });

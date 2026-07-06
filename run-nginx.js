@@ -63,7 +63,10 @@ async function main() {
   start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root);
   await sleep(4000);
 
-  start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root);
+  start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root, {
+    IAM_LOGIN_PORT: process.env.IAM_LOGIN_PORT || '5180',
+    IAM_LOGIN_HOST: process.env.IAM_LOGIN_HOST || '127.0.0.1',
+  });
   await sleep(2000);
 
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);

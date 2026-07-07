@@ -1,13 +1,13 @@
 /** iam-login 统一登录页（按 hostname 自动切换 localhost / Nginx 子域） */
 (function () {
-  const nginx = location.hostname.endsWith(".iam.local");
+  const nginx = location.hostname.endsWith(".pinshuai.local");
   window.IAM_LOGIN_CONFIG = nginx
     ? {
-        apiBaseUrl: "http://api.iam.local",
-        oidcIssuer: "http://api.iam.local/oidc",
+        apiBaseUrl: "http://api.pinshuai.local",
+        oidcIssuer: "http://api.pinshuai.local/oidc",
         appReturnUrls: {
-          "iam-admin-spa": "http://admin.iam.local/",
-          "flow-admin-spa": "http://flow.iam.local/"
+          "iam-admin-spa": "http://admin.pinshuai.local/",
+          "flow-admin-spa": "http://flow.pinshuai.local/"
         }
       }
     : {

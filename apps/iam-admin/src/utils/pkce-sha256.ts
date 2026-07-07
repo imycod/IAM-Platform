@@ -1,4 +1,4 @@
-/** SHA-256 for PKCE when Web Crypto subtle is unavailable (e.g. http://*.iam.local). */
+/** SHA-256 for PKCE when Web Crypto subtle is unavailable (e.g. http://*.pinshuai.local). */
 export function sha256Bytes(data: Uint8Array): ArrayBuffer {
   const rotr = (n: number, x: number) => (x >>> n) | (x << (32 - n));
   const ch = (x: number, y: number, z: number) => (x & y) ^ (~x & z);

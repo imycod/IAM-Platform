@@ -1,6 +1,6 @@
 /**
  * iam-login 跨 Tab SSO 同步
- * 任一应用在 login.iam.local 完成登录后，其它 Tab 利用 IdP SSO 会话自动续登。
+ * 任一应用在 login.pinshuai.local 完成登录后，其它 Tab 利用 IdP SSO 会话自动续登。
  * 注意：浏览器 _interaction cookie 同时只能有一个，跨应用时走 restartAuthUrl 重建授权链。
  */
 (function (global) {
@@ -143,10 +143,10 @@
 
   function inferClientFromReferrer() {
     const ref = document.referrer || '';
-    if (ref.indexOf('admin.iam.local') >= 0 || ref.indexOf(':8848') >= 0) {
+    if (ref.indexOf('admin.pinshuai.local') >= 0 || ref.indexOf(':8848') >= 0) {
       return 'iam-admin-spa';
     }
-    if (ref.indexOf('flow.iam.local') >= 0 || ref.indexOf(':8849') >= 0) {
+    if (ref.indexOf('flow.pinshuai.local') >= 0 || ref.indexOf(':8849') >= 0) {
       return 'flow-admin-spa';
     }
     return null;
@@ -290,7 +290,7 @@
 
   function clearLoginEventCookie() {
     const host = global.location.hostname;
-    const domain = host.endsWith('iam.local') ? '; domain=.iam.local' : '';
+    const domain = host.endsWith('iam.local') ? '; domain=.pinshuai.local' : '';
     document.cookie = 'iam_sso_login_event=; Max-Age=0; path=/' + domain;
   }
 

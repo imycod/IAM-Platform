@@ -30,10 +30,10 @@ async function bootstrap(): Promise<void> {
     'http://localhost:4180',
     'http://127.0.0.1:4180',
     // Nginx 子域模拟（deploy/nginx）
-    'http://login.iam.local',
-    'http://api.iam.local',
-    'http://admin.iam.local',
-    'http://flow.iam.local',
+    'http://login.pinshuai.local',
+    'http://api.pinshuai.local',
+    'http://admin.pinshuai.local',
+    'http://flow.pinshuai.local',
   ]);
   const appUrl = appCfg.url;
   if (appUrl) {

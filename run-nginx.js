@@ -56,7 +56,7 @@ function shutdown() {
 }
 
 async function main() {
-  console.log('\n=== Nginx 子域模式 (admin/login/api/flow.iam.local) ===');
+  console.log('\n=== Nginx 子域模式 (admin/login/api/flow.pinshuai.local) ===');
   console.log('请确认 hosts 已配置且 docker nginx 已启动：');
   console.log('  docker compose -f deploy/docker-compose.nginx.yaml up -d\n');
 
@@ -68,7 +68,7 @@ async function main() {
 
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);
 
-  console.log('\n访问 http://admin.iam.local （未登录应跳转 http://login.iam.local）');
+  console.log('\n访问 http://admin.pinshuai.local （未登录应跳转 http://login.pinshuai.local）');
   console.log('Press Ctrl+C to stop.\n');
 }
 

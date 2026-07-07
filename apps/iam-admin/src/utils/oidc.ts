@@ -15,11 +15,11 @@ function resolveClientConfig(): IamClientConfig {
   if (fromWindow?.oidcIssuer) {
     return { redirectUri: "", ...fromWindow };
   }
-  const nginx = location.hostname.endsWith(".iam.local");
+  const nginx = location.hostname.endsWith(".pinshuai.local");
   return nginx
     ? {
-        iamBaseUrl: "http://api.iam.local",
-        oidcIssuer: "http://api.iam.local/oidc",
+        iamBaseUrl: "http://api.pinshuai.local",
+        oidcIssuer: "http://api.pinshuai.local/oidc",
         clientId: "iam-admin-spa",
         redirectUri: "",
         scopes: "openid profile email",
@@ -253,7 +253,7 @@ export function performGlobalLogout(
 }
 
 /**
- * 应用入口 SSO：先探测 IAM 会话，有则静默，无则交互式（最终到 login.iam.local?uid=）。
+ * 应用入口 SSO：先探测 IAM 会话，有则静默，无则交互式（最终到 login.pinshuai.local?uid=）。
  * 供路由守卫调用，避免先落到 /#/login。
  */
 export async function beginSsoRedirect(

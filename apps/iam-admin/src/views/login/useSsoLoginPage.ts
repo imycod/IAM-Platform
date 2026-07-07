@@ -16,7 +16,7 @@ import { isSsoSession } from "@/utils/login-session";
 export type SsoLoginPhase = "probing" | "entering" | "ready";
 
 /**
- * 默认账密登录；仅点击 SSO 才走 OIDC / login.iam.local。
+ * 默认账密登录；仅点击 SSO 才走 OIDC / login.pinshuai.local。
  * sso_interactive 回调、已有 SSO 本地会话时自动续登。
  */
 export function useSsoLoginPage(onEnterApp: () => void) {

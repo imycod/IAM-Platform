@@ -9,7 +9,7 @@ export const IAM_ADMIN_SPA_CLIENT_ID = 'iam-admin-spa';
 /** iam-admin：直连端口 + Nginx 子域 */
 export const IAM_ADMIN_SPA_REDIRECT_URIS = [
   ...devRedirectUris([8848, 5173]),
-  ...nginxRedirectUris(['admin.iam.local']),
+  ...nginxRedirectUris(['admin.pinshuai.local']),
 ];
 
 /**

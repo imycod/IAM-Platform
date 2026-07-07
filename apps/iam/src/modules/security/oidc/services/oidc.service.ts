@@ -297,7 +297,7 @@ export class OidcService implements IOidcInteraction {
       path: '/',
       sameSite: 'lax' as const,
       httpOnly: false,
-      ...(host.endsWith('iam.local') ? { domain: '.iam.local' } : {}),
+      ...(host.endsWith('iam.local') ? { domain: '.pinshuai.local' } : {}),
     };
     if (typeof res.cookie === 'function') {
       res.cookie('iam_sso_logout_event', value, cookieOpts);
@@ -305,7 +305,7 @@ export class OidcService implements IOidcInteraction {
     }
     let header = `iam_sso_logout_event=${encodeURIComponent(value)}; Max-Age=60; Path=/; SameSite=Lax`;
     if (host.endsWith('iam.local')) {
-      header += '; Domain=.iam.local';
+      header += '; Domain=.pinshuai.local';
     }
     res.setHeader('Set-Cookie', header);
   }

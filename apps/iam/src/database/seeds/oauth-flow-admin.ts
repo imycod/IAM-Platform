@@ -8,7 +8,7 @@ export const FLOW_ADMIN_SPA_CLIENT_ID = 'flow-admin-spa';
 /** flow-admin：直连端口 + Nginx 子域 */
 export const FLOW_ADMIN_SPA_REDIRECT_URIS = [
   ...devRedirectUris([8849, 4173]),
-  ...nginxRedirectUris(['flow.iam.local']),
+  ...nginxRedirectUris(['flow.pinshuai.local']),
 ];
 
 /**

@@ -23,7 +23,7 @@ export function frontchannelLogoutUri(redirectUris: string[]): string | undefine
   if (!origins.length) {
     return undefined;
   }
-  const nginx = origins.find((o) => o.includes('.iam.local'));
+  const nginx = origins.find((o) => o.includes('.pinshuai.local'));
   const primary = nginx ?? origins[0];
   return `${primary}/frontchannel-logout.html`;
 }

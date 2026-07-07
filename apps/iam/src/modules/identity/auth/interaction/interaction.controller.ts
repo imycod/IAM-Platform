@@ -62,8 +62,8 @@ const OIDC_AUTH_PARAM_KEYS = [
 
 const DEFAULT_APP_RETURN_URLS: Record<string, Record<string, string>> = {
   nginx: {
-    'iam-admin-spa': 'http://admin.iam.local/',
-    'flow-admin-spa': 'http://flow.iam.local/',
+    'iam-admin-spa': 'http://admin.pinshuai.local/',
+    'flow-admin-spa': 'http://flow.pinshuai.local/',
   },
   local: {
     'iam-admin-spa': 'http://localhost:8848/',
@@ -101,8 +101,8 @@ function buildRestartAuthUrl(issuer: string, params: Record<string, unknown>): s
 /** 按 redirect_uri 推断 issuer / 回跳地址，避免 nginx 访问时仍返回 localhost。 */
 function resolveOidcIssuerForParams(baseIssuer: string, params: Record<string, unknown>): string {
   const redirectUri = params.redirect_uri as string | undefined;
-  if (redirectUri?.includes('.iam.local')) {
-    return 'http://api.iam.local/oidc';
+  if (redirectUri?.includes('.pinshuai.local')) {
+    return 'http://api.pinshuai.local/oidc';
   }
   return baseIssuer;
 }
@@ -187,7 +187,7 @@ export class InteractionController {
     );
   }
 
-  /** 登录成功后写入跨子域 cookie，供 login.iam.local 其它 Tab 感知。 */
+  /** 登录成功后写入跨子域 cookie，供 login.pinshuai.local 其它 Tab 感知。 */
   private broadcastSsoLoginEvent(req: Request, res: Response, clientId?: string): void {
     const host = req.hostname;
     const value = clientId ? `${Date.now()}:${clientId}` : String(Date.now());
@@ -204,7 +204,7 @@ export class InteractionController {
       httpOnly: false,
     };
     if (host.endsWith('iam.local')) {
-      opts.domain = '.iam.local';
+      opts.domain = '.pinshuai.local';
     }
     res.cookie('iam_sso_login_event', value, opts);
   }

@@ -21,6 +21,11 @@ defineOptions({
   name: "AccessDataPermission"
 });
 
+type DataPermissionTreeRow = DataPermissionItem & {
+  isRoleGroup?: boolean;
+  children?: DataPermissionTreeRow[];
+};
+
 const scopeOptions: { label: string; value: DataScope; hint: string }[] = [
   { label: "仅本人", value: "self", hint: "只能访问自己创建/拥有的数据" },
   { label: "本部门", value: "dept", hint: "可访问本部门范围内的数据" },
@@ -88,6 +93,7 @@ const tableRef = ref();
 const loading = ref(false);
 const dataList = ref<DataPermissionItem[]>([]);
 const roleOptions = ref<RoleItem[]>([]);
+const treeMode = ref(true);
 
 const filters = reactive({
   roleId: "",
@@ -102,49 +108,133 @@ const filteredList = computed(() => {
   });
 });
 
-const columns: TableColumnList = [
-  { label: "角色", prop: "roleName", minWidth: 120, formatter: ({ roleName }) => roleName ?? "-" },
+function buildTreeData(items: DataPermissionItem[]): DataPermissionTreeRow[] {
+  const groupMap = new Map<string, DataPermissionItem[]>();
+
+  for (const item of items) {
+    const key = item.roleCode?.trim() || item.roleId;
+    const list = groupMap.get(key) ?? [];
+    list.push(item);
+    groupMap.set(key, list);
+  }
+
+  const tree: DataPermissionTreeRow[] = [];
+
+  for (const [roleCode, children] of [...groupMap.entries()].sort(([a], [b]) =>
+    a.localeCompare(b)
+  )) {
+    const sortedChildren = [...children].sort((a, b) =>
+      a.resource.localeCompare(b.resource)
+    );
+
+    // 仅一条数据时直接平铺展示，不套父子树
+    if (sortedChildren.length === 1) {
+      tree.push({
+        ...sortedChildren[0],
+        isRoleGroup: false
+      });
+      continue;
+    }
+
+    const first = sortedChildren[0];
+    tree.push({
+      id: `role:${roleCode}`,
+      roleId: first.roleId,
+      roleCode,
+      roleName: first.roleName,
+      resource: "",
+      scope: "self" as DataScope,
+      customExpr: null,
+      isRoleGroup: true,
+      children: sortedChildren.map(child => ({
+        ...child,
+        isRoleGroup: false
+      }))
+    });
+  }
+
+  return tree;
+}
+
+const treeData = computed(() => buildTreeData(filteredList.value));
+
+const tableData = computed(() =>
+  treeMode.value ? treeData.value : filteredList.value
+);
+
+function isLeafRow(row: DataPermissionTreeRow) {
+  return treeMode.value ? !row.isRoleGroup : true;
+}
+
+const columns = computed<TableColumnList>(() => [
+  {
+    label: "角色",
+    prop: "roleName",
+    align: "left",
+    minWidth: 140,
+    formatter: row => row.roleName ?? row.roleCode ?? "-"
+  },
   {
     label: "角色编码",
     prop: "roleCode",
-    minWidth: 160,
-    formatter: ({ roleCode }) => roleCode ?? "-"
+    minWidth: 230,
+    align: "left",
+    formatter: row => {
+      if (treeMode.value && row.isRoleGroup) {
+        const count = row.children?.length ?? 0;
+        return count ? `${row.roleCode ?? "-"}（${count} 条）` : row.roleCode ?? "-";
+      }
+      return row.roleCode ?? "-";
+    }
   },
   {
     label: "资源标识",
     prop: "resource",
     minWidth: 180,
-    formatter: ({ resource, resourceName }) =>
-      resourceName ? `${resourceName}（${resource}）` : resource
+    formatter: row => {
+      if (treeMode.value && row.isRoleGroup) return "-";
+      const { resource, resourceName } = row;
+      return resourceName ? `${resourceName}（${resource}）` : resource;
+    }
   },
   {
     label: "数据范围",
     prop: "scope",
     minWidth: 140,
-    formatter: ({ scope }) => scopeLabelMap[scope as DataScope] ?? scope
+    formatter: row =>
+      treeMode.value && row.isRoleGroup
+        ? "-"
+        : scopeLabelMap[row.scope as DataScope] ?? row.scope
   },
   {
     label: "跨组织",
     prop: "unrestricted",
     minWidth: 90,
-    formatter: ({ scope, unrestricted }) =>
-      scope === "all" ? (unrestricted ? "是" : "否") : "-"
+    formatter: row => {
+      if (treeMode.value && row.isRoleGroup) return "-";
+      return row.scope === "all" ? (row.unrestricted ? "是" : "否") : "-";
+    }
   },
   {
     label: "自定义表达式",
     prop: "customExpr",
     minWidth: 200,
-    formatter: ({ customExpr }) =>
-      customExpr ? JSON.stringify(customExpr) : "-"
+    formatter: row =>
+      treeMode.value && row.isRoleGroup
+        ? "-"
+        : row.customExpr
+          ? JSON.stringify(row.customExpr)
+          : "-"
   },
   {
     label: "创建时间",
     prop: "createdAt",
     minWidth: 170,
-    formatter: ({ createdAt }) => createdAt ?? "-"
+    formatter: row =>
+      treeMode.value && row.isRoleGroup ? "-" : row.createdAt ?? "-"
   },
   { label: "操作", fixed: "right", width: 160, slot: "operation" }
-];
+]);
 
 const dialogVisible = ref(false);
 const dialogTitle = ref("添加数据权限");
@@ -290,7 +380,9 @@ function openCreateDialog() {
   dialogVisible.value = true;
 }
 
-async function openEditDialog(row: DataPermissionItem) {
+async function openEditDialog(row: DataPermissionTreeRow) {
+  if (!isLeafRow(row)) return;
+
   resetForm();
   editingId.value = row.id;
   dialogTitle.value = "编辑数据权限";
@@ -365,7 +457,9 @@ async function submitForm() {
   }
 }
 
-async function handleDelete(row: DataPermissionItem) {
+async function handleDelete(row: DataPermissionTreeRow) {
+  if (!isLeafRow(row)) return;
+
   try {
     await ElMessageBox.confirm(
       `确定删除「${row.roleName ?? row.roleId} / ${row.resource}」的数据权限吗？`,
@@ -460,7 +554,24 @@ onMounted(async () => {
       </el-form-item>
     </el-form>
 
-    <PureTableBar title="数据权限" :columns="columns" @refresh="onSearch">
+    <PureTableBar
+      :key="treeMode ? 'tree' : 'flat'"
+      :columns="columns"
+      :table-key="treeMode ? 'tree' : 'flat'"
+      @refresh="onSearch"
+    >
+      <template #title>
+        <div class="flex items-center gap-4">
+          <p class="font-bold truncate">数据权限</p>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="text-sm text-secondary">展示方式</span>
+            <el-radio-group v-model="treeMode" size="small">
+              <el-radio-button :value="true">树形</el-radio-button>
+              <el-radio-button :value="false">平铺</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+      </template>
       <template #buttons>
         <el-button type="primary" @click="openCreateDialog">
           添加数据权限
@@ -477,16 +588,29 @@ onMounted(async () => {
           table-layout="auto"
           :loading="loading"
           :size="size"
-          :data="filteredList"
+          :data="tableData"
           :columns="dynamicColumns"
+          :default-expand-all="treeMode"
+          :tree-props="
+            treeMode
+              ? {
+                  children: 'children',
+                  hasChildren: 'hasChildren',
+                  checkStrictly: false
+                }
+              : undefined
+          "
         >
           <template #operation="{ row }">
-            <el-button link type="primary" @click="openEditDialog(row)">
-              编辑
-            </el-button>
-            <el-button link type="danger" @click="handleDelete(row)">
-              删除
-            </el-button>
+            <template v-if="isLeafRow(row)">
+              <el-button link type="primary" @click="openEditDialog(row)">
+                编辑
+              </el-button>
+              <el-button link type="danger" @click="handleDelete(row)">
+                删除
+              </el-button>
+            </template>
+            <span v-else class="text-secondary">-</span>
           </template>
         </pure-table>
       </template>
@@ -610,5 +734,9 @@ onMounted(async () => {
     background: var(--el-fill-color-light);
     border-radius: 3px;
   }
+}
+
+.text-secondary {
+  color: var(--el-text-color-secondary);
 }
 </style>

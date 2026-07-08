@@ -103,15 +103,10 @@ export class PortalController {
     const email = dto.email ?? dto.username;
     const app = await this.resolveApp(dto.appCode);
 
-    let result;
-    try {
-      result = await this.authService.login(email, dto.password, {
-        ip: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-    } catch {
-      throw new UnauthorizedException('账号或密码错误');
-    }
+    const result = await this.authService.login(email, dto.password, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     const data = await this.buildPortalUserData(result.user.id, app, result.token, result.token);
     return { success: true, data: { ...data, expires: result.expiresAt } };

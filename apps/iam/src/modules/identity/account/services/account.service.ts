@@ -105,6 +105,25 @@ export class AccountService {
   }
 
   async findManyCredentials(query: QueryAccountDto): Promise<PaginatedResult<AccountEntity>> {
-    return this.findMany(Object.assign(query, { providerId: CREDENTIAL_PROVIDER }));
+    const qb = this.repo
+      .createQueryBuilder('account')
+      .innerJoinAndSelect('account.user', 'user')
+      .where('account.providerId = :providerId', { providerId: CREDENTIAL_PROVIDER })
+      .andWhere('user.deletedAt IS NULL')
+      .orderBy('account.createdAt', 'DESC')
+      .skip(query.skip)
+      .take(query.take);
+
+    if (query.userId) {
+      qb.andWhere('account.userId = :userId', { userId: query.userId });
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  /** 用户删除/恢复时移除邮箱密码凭证，避免孤儿 account 占用唯一键并阻塞重新开通 */
+  async removeCredentialsByUserId(userId: string): Promise<void> {
+    await this.repo.delete({ userId, providerId: CREDENTIAL_PROVIDER });
   }
 }

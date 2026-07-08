@@ -29,8 +29,18 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 
+const activeUserIdSet = computed(
+  () => new Set(userOptions.value.map(user => user.id))
+);
+
+/** 仅统计「当前有效用户」已开通凭证的 id，忽略用户已删但凭证残留的脏数据 */
 const credentialUserIds = computed(
-  () => new Set(credentials.value.map(item => item.userId))
+  () =>
+    new Set(
+      credentials.value
+        .filter(item => activeUserIdSet.value.has(item.userId))
+        .map(item => item.userId)
+    )
 );
 
 const eligibleUsers = computed(() =>

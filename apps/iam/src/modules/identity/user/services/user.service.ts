@@ -3,7 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import type { PaginatedResult } from '@app/common';
+import { AccountService } from '../../account/services/account.service';
+import { SessionEntity } from '../../session/entities/session.entity';
 import { UserEntity, UserStatus } from '../entities/user.entity';
 import { UserRepository } from '../repositories/user.repository';
 import { CreateUserDto } from '../dto/create-user.dto';
@@ -12,7 +16,12 @@ import { QueryUserDto } from '../dto/query-user.dto';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly userRepository: UserRepository) {}
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly accountService: AccountService,
+    @InjectRepository(SessionEntity)
+    private readonly sessionRepo: Repository<SessionEntity>,
+  ) {}
 
   async create(dto: CreateUserDto): Promise<UserEntity> {
     const existingByEmail = dto.email
@@ -40,7 +49,9 @@ export class UserService {
       }
       Object.assign(existing, dto);
       await this.userRepository.recover(existing);
-      return this.userRepository.save(existing);
+      const saved = await this.userRepository.save(existing);
+      await this.revokeLoginArtifacts(saved.id);
+      return saved;
     }
 
     const user = this.userRepository.create({
@@ -90,6 +101,15 @@ export class UserService {
     if (user.isSystem) {
       throw new ConflictException('系统内置账号不可删除');
     }
+    await this.revokeLoginArtifacts(id);
     await this.userRepository.softDelete(id);
+  }
+
+  /** 删除/恢复用户时清理登录凭证与会话，避免孤儿 account 阻塞重新开通 */
+  private async revokeLoginArtifacts(userId: string): Promise<void> {
+    await Promise.all([
+      this.accountService.removeCredentialsByUserId(userId),
+      this.sessionRepo.softDelete({ userId }),
+    ]);
   }
 }

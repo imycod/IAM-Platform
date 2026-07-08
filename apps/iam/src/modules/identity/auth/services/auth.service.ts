@@ -82,7 +82,7 @@ export class AuthService {
       throw new UnauthorizedException('账号或密码错误');
     }
     if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('账号不可用');
+      throw new UnauthorizedException(this.resolveStatusLoginMessage(user.status));
     }
     const account = await this.accountService.findByProvider(CREDENTIAL_PROVIDER, email);
     if (!account?.password) {
@@ -93,6 +93,19 @@ export class AuthService {
       throw new UnauthorizedException('账号或密码错误');
     }
     return user;
+  }
+
+  private resolveStatusLoginMessage(status: UserStatus): string {
+    switch (status) {
+      case UserStatus.DISABLED:
+        return '账号已禁用';
+      case UserStatus.LOCKED:
+        return '账号已锁定';
+      case UserStatus.PENDING:
+        return '账号待激活，请联系管理员开通登录';
+      default:
+        return '账号不可用';
+    }
   }
 
   /** 校验凭证；失败时写入登录审计（成功由 OIDC authorization.success 统一记录）。 */

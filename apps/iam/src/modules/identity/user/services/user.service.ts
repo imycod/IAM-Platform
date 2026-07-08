@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { PaginatedResult } from '@app/common';
-import { UserEntity } from '../entities/user.entity';
+import { UserEntity, UserStatus } from '../entities/user.entity';
 import { UserRepository } from '../repositories/user.repository';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
@@ -43,7 +43,10 @@ export class UserService {
       return this.userRepository.save(existing);
     }
 
-    const user = this.userRepository.create(dto);
+    const user = this.userRepository.create({
+      ...dto,
+      status: dto.status ?? UserStatus.PENDING,
+    });
     return this.userRepository.save(user);
   }
 

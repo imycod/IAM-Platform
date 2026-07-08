@@ -30,6 +30,20 @@ const statusLabelMap = Object.fromEntries(
   statusOptions.map(item => [item.value, item.label])
 ) as Record<UserStatus, string>;
 
+const statusTagTypeMap: Record<
+  UserStatus,
+  "success" | "warning" | "info" | "danger"
+> = {
+  active: "success",
+  pending: "warning",
+  disabled: "info",
+  locked: "danger"
+};
+
+function resolveStatusTagType(status?: string) {
+  return statusTagTypeMap[status as UserStatus] ?? "info";
+}
+
 const tableRef = ref();
 const loading = ref(false);
 const dataList = ref<IdentityUserItem[]>([]);
@@ -64,7 +78,7 @@ const columns: TableColumnList = [
     label: "状态",
     prop: "status",
     minWidth: 100,
-    formatter: ({ status }) => statusLabelMap[status as UserStatus] ?? status
+    slot: "status"
   },
   { label: "最后登录", prop: "lastLoginAt", minWidth: 170 },
   { label: "创建时间", prop: "createdAt", minWidth: 170 },
@@ -81,7 +95,7 @@ const formModel = reactive<IdentityUserForm & { status: UserStatus }>({
   email: "",
   phone: "",
   name: "",
-  status: "active"
+  status: "pending"
 });
 
 const formRules: FormRules = {
@@ -122,7 +136,7 @@ function resetForm() {
   formModel.email = "";
   formModel.phone = "";
   formModel.name = "";
-  formModel.status = "active";
+  formModel.status = "pending";
   editingId.value = null;
   formRef.value?.clearValidate();
 }
@@ -265,6 +279,15 @@ onMounted(onSearch);
           :data="filteredList"
           :columns="dynamicColumns"
         >
+          <template #status="{ row }">
+            <el-tag
+              :type="resolveStatusTagType(row.status)"
+              size="small"
+              effect="light"
+            >
+              {{ statusLabelMap[row.status as UserStatus] ?? row.status ?? "-" }}
+            </el-tag>
+          </template>
           <template #operation="{ row }">
             <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
@@ -299,6 +322,9 @@ onMounted(onSearch);
               :value="item.value"
             />
           </el-select>
+          <p v-if="!editingId" class="form-hint">
+            新建用户默认为「待激活」；在「身份认证 → 凭证账户」开通邮箱密码登录后自动变为「正常」。
+          </p>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -314,5 +340,11 @@ onMounted(onSearch);
   :deep(.el-dropdown-menu__item i) {
     margin: 0;
   }
+}
+.form-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
 }
 </style>

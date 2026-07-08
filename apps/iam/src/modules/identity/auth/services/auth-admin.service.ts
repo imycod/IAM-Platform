@@ -27,7 +27,7 @@ export class AuthAdminService {
 
   async createCredential(dto: CreateCredentialAdminDto): Promise<AccountEntity> {
     const user = await this.userService.findOne(dto.userId);
-    if (user.status !== UserStatus.ACTIVE) {
+    if (user.status === UserStatus.DISABLED || user.status === UserStatus.LOCKED) {
       throw new BadRequestException('用户状态不可用，无法开通凭证登录');
     }
     const email = user.email?.trim();
@@ -51,6 +51,10 @@ export class AuthAdminService {
       accountId: email,
       password: passwordHash,
     });
+
+    if (user.status === UserStatus.PENDING) {
+      await this.userService.update(user.id, { status: UserStatus.ACTIVE });
+    }
 
     return this.accountService.findOne(account.id);
   }

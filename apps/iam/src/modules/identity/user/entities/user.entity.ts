@@ -33,7 +33,7 @@ export class UserEntity extends BaseEntity {
   name: string | null;
 
   @Index()
-  @Column({ type: 'varchar', length: 20, default: UserStatus.ACTIVE })
+  @Column({ type: 'varchar', length: 20, default: UserStatus.PENDING })
   status: UserStatus;
 
   @Column({ type: 'boolean', default: false })

@@ -35,7 +35,7 @@ const credentialUserIds = computed(
 
 const eligibleUsers = computed(() =>
   userOptions.value.filter(user => {
-    if (user.status !== "active") return false;
+    if (user.status === "disabled" || user.status === "locked") return false;
     if (!user.email?.trim()) return false;
     if (credentialUserIds.value.has(user.id)) return false;
     return true;
@@ -102,7 +102,9 @@ const formRules: FormRules = {
 
 function formatUserLabel(user: IdentityUserItem) {
   const name = user.name ? ` / ${user.name}` : "";
-  return `${user.email}${name}`;
+  const status =
+    user.status === "pending" ? "（待激活）" : user.status === "active" ? "" : `（${user.status}）`;
+  return `${user.email}${name}${status}`;
 }
 
 async function loadUsers() {

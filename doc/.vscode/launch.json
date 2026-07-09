@@ -3,89 +3,96 @@
   "configurations": [
     {
       "type": "node",
-      "request": "launch",
-      "name": "IAM: start:dev:nginx (debug)",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["run", "start:debug:nginx"],
-      "cwd": "${workspaceFolder}/IAM-Platform",
-      "console": "integratedTerminal",
-      "restart": true,
-      "sourceMaps": true,
-      "autoAttachChildProcesses": true,
-      "outFiles": ["${workspaceFolder}/IAM-Platform/dist/**/*.js"],
-      "skipFiles": ["<node_internals>/**"]
-    },
-    {
-      "type": "node",
       "request": "attach",
-      "name": "IAM: attach (9229)",
+      "name": "IAM: Debug (nginx)",
       "port": 9229,
+      "address": "127.0.0.1",
       "restart": true,
       "sourceMaps": true,
-      "cwd": "${workspaceFolder}/IAM-Platform",
-      "outFiles": ["${workspaceFolder}/IAM-Platform/dist/**/*.js"],
-      "skipFiles": ["<node_internals>/**"]
-    },
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "flow-admin backend: dev (debug)",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["run", "start:debug"],
-      "cwd": "${workspaceFolder}/flow-admin/backend",
-      "console": "integratedTerminal",
-      "restart": true,
-      "sourceMaps": true,
-      "autoAttachChildProcesses": true,
-      "preLaunchTask": "flow-admin: build shared",
-      "outFiles": ["${workspaceFolder}/flow-admin/backend/dist/**/*.js"],
+      "preLaunchTask": "iam: start debug (nginx)",
+      "cwd": "${workspaceFolder}/iam-platform",
+      "outFiles": ["${workspaceFolder}/iam-platform/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/iam-platform/**",
+        "!**/node_modules/**"
+      ],
       "skipFiles": ["<node_internals>/**"]
     },
     {
       "type": "node",
       "request": "attach",
-      "name": "flow-admin backend: attach (9229)",
+      "name": "IAM: Debug (development)",
       "port": 9229,
+      "address": "127.0.0.1",
       "restart": true,
       "sourceMaps": true,
-      "cwd": "${workspaceFolder}/flow-admin/backend",
-      "outFiles": ["${workspaceFolder}/flow-admin/backend/dist/**/*.js"],
+      "preLaunchTask": "iam: start debug (development)",
+      "cwd": "${workspaceFolder}/iam-platform",
+      "outFiles": ["${workspaceFolder}/iam-platform/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/iam-platform/**",
+        "!**/node_modules/**"
+      ],
       "skipFiles": ["<node_internals>/**"]
     },
     {
       "type": "node",
       "request": "attach",
-      "name": "flow-admin backend: attach (9230)",
+      "name": "IAM: Attach (9229)",
+      "port": 9229,
+      "address": "127.0.0.1",
+      "restart": true,
+      "sourceMaps": true,
+      "cwd": "${workspaceFolder}/iam-platform",
+      "outFiles": ["${workspaceFolder}/iam-platform/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/iam-platform/**",
+        "!**/node_modules/**"
+      ],
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "flow-admin Backend: Debug (9230)",
       "port": 9230,
+      "address": "127.0.0.1",
       "restart": true,
       "sourceMaps": true,
+      "preLaunchTask": "flow-admin: start debug (9230)",
       "cwd": "${workspaceFolder}/flow-admin/backend",
       "outFiles": ["${workspaceFolder}/flow-admin/backend/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/flow-admin/**",
+        "!**/node_modules/**"
+      ],
       "skipFiles": ["<node_internals>/**"]
     },
     {
       "type": "node",
-      "request": "launch",
-      "name": "flow-admin backend: dev (debug, port 9230)",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["run", "start:debug:9230"],
-      "cwd": "${workspaceFolder}/flow-admin/backend",
-      "console": "integratedTerminal",
+      "request": "attach",
+      "name": "flow-admin Backend: Attach (9230)",
+      "port": 9230,
+      "address": "127.0.0.1",
       "restart": true,
       "sourceMaps": true,
-      "autoAttachChildProcesses": true,
-      "preLaunchTask": "flow-admin: build shared",
+      "cwd": "${workspaceFolder}/flow-admin/backend",
       "outFiles": ["${workspaceFolder}/flow-admin/backend/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/flow-admin/**",
+        "!**/node_modules/**"
+      ],
       "skipFiles": ["<node_internals>/**"]
     }
   ],
   "compounds": [
     {
-      "name": "IAM + flow-admin backend (debug)",
+      "name": "IAM + flow-admin Backend (debug)",
       "configurations": [
-        "IAM: start:dev:nginx (debug)",
-        "flow-admin backend: dev (debug, port 9230)"
+        "IAM: Attach (9229)",
+        "flow-admin Backend: Attach (9230)"
       ],
+      "preLaunchTask": "dev: start both debug servers",
       "stopAll": true
     }
   ]

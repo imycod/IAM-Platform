@@ -725,6 +725,15 @@
     }
 
     if (interactionMeta?.hasSession) {
+      if (interactionMeta.prompt === 'consent') {
+        const consentUrl = new URL('consent.html', global.location.href);
+        consentUrl.searchParams.set('uid', uid);
+        if (interactionMeta.clientId) {
+          consentUrl.searchParams.set('client_id', interactionMeta.clientId);
+        }
+        global.location.replace(consentUrl.toString());
+        return interactionMeta;
+      }
       restartAuthChain('existing_session', uid);
       return interactionMeta;
     }

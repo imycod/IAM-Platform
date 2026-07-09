@@ -19,6 +19,16 @@ defineOptions({
   name: "SecurityOauthClientIndex"
 });
 
+const consentModeOptions = [
+  { label: "从不（自动授权）", value: "never" },
+  { label: "首次授权需确认", value: "first_time" },
+  { label: "每次均需确认", value: "always" }
+] as const;
+
+const consentModeLabelMap = Object.fromEntries(
+  consentModeOptions.map(item => [item.value, item.label])
+);
+
 const authMethodOptions = [
   { label: "无（公共 SPA + PKCE）", value: "none" },
   { label: "client_secret_basic", value: "client_secret_basic" },
@@ -82,6 +92,13 @@ const columns: TableColumnList = [
     formatter: ({ requirePkce }) => (requirePkce ? "是" : "否")
   },
   {
+    label: "授权确认",
+    prop: "consentMode",
+    minWidth: 120,
+    formatter: ({ consentMode }) =>
+      consentModeLabelMap[consentMode ?? "never"] ?? consentMode
+  },
+  {
     label: "Redirect URIs",
     minWidth: 220,
     formatter: ({ redirectUris }) => redirectUris?.join(", ") ?? "-"
@@ -109,7 +126,8 @@ const formModel = reactive({
   grantTypes: [...grantPresets] as string[],
   responseTypes: [...responsePresets] as string[],
   tokenEndpointAuthMethod: "none",
-  requirePkce: true
+  requirePkce: true,
+  consentMode: "never" as const
 });
 
 const isEditing = computed(() => !!editingId.value);
@@ -197,6 +215,7 @@ function resetForm() {
   formModel.responseTypes = [...responsePresets];
   formModel.tokenEndpointAuthMethod = "none";
   formModel.requirePkce = true;
+  formModel.consentMode = "never";
   editingId.value = null;
   formRef.value?.clearValidate();
 }
@@ -218,6 +237,7 @@ function openEditDialog(row: OauthClientItem) {
   formModel.responseTypes = [...row.responseTypes];
   formModel.tokenEndpointAuthMethod = row.tokenEndpointAuthMethod;
   formModel.requirePkce = row.requirePkce;
+  formModel.consentMode = row.consentMode ?? "never";
   dialogVisible.value = true;
 }
 
@@ -230,7 +250,8 @@ function buildPayload(): OauthClientForm {
     grantTypes: formModel.grantTypes,
     responseTypes: formModel.responseTypes,
     tokenEndpointAuthMethod: formModel.tokenEndpointAuthMethod,
-    requirePkce: formModel.requirePkce
+    requirePkce: formModel.requirePkce,
+    consentMode: formModel.consentMode
   };
 }
 
@@ -264,7 +285,8 @@ async function submitForm() {
         grantTypes: formModel.grantTypes,
         responseTypes: formModel.responseTypes,
         tokenEndpointAuthMethod: formModel.tokenEndpointAuthMethod,
-        requirePkce: formModel.requirePkce
+        requirePkce: formModel.requirePkce,
+        consentMode: formModel.consentMode
       });
       message("更新成功", { type: "success" });
     } else {
@@ -490,6 +512,16 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="要求 PKCE">
           <el-switch v-model="formModel.requirePkce" />
+        </el-form-item>
+        <el-form-item label="授权确认">
+          <el-select v-model="formModel.consentMode" class="w-full!">
+            <el-option
+              v-for="item in consentModeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>

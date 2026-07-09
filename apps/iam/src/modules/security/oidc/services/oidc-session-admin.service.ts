@@ -69,6 +69,11 @@ export class OidcSessionAdminService {
     }
   }
 
+  /** 仅吊销单个 access_token，不删除 Grant / SSO Session（业务系统本地退出） */
+  async revokeAccessTokenOnly(tokenId: string): Promise<void> {
+    await this.payloadRepo.delete({ id: tokenId, model: 'AccessToken' });
+  }
+
   private async revokeAccessTokensForAccount(accountId: string): Promise<void> {
     const tokens = await this.payloadRepo.find({
       where: { model: 'AccessToken' },

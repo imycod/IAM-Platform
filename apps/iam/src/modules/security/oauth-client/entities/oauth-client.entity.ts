@@ -1,5 +1,10 @@
 import { BaseEntity } from '@app/database';
 import { Column, Entity, Index } from 'typeorm';
+import {
+  CONSENT_MODES,
+  DEFAULT_CONSENT_MODE,
+  type ConsentMode,
+} from '../constants/consent-mode';
 
 /**
  * OAuth 客户端，与 application 1:1（application_id）。
@@ -35,4 +40,10 @@ export class OauthClientEntity extends BaseEntity {
 
   @Column({ type: 'boolean', default: true })
   requirePkce: boolean;
+
+  /** 授权确认策略：never 自动跳过；first_time 首次授权需确认；always 每次均需确认。 */
+  @Column({ type: 'varchar', length: 20, default: DEFAULT_CONSENT_MODE })
+  consentMode: ConsentMode;
 }
+
+export { CONSENT_MODES, DEFAULT_CONSENT_MODE, type ConsentMode };

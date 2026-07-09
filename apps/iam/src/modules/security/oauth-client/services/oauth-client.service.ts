@@ -18,6 +18,8 @@ import {
   postLogoutRedirectUris,
 } from '../utils/oauth-logout-uri.util';
 
+import { DEFAULT_CONSENT_MODE, type ConsentMode } from '../constants/consent-mode';
+
 export interface OidcClientMetadata {
   client_id: string;
   client_secret?: string;
@@ -28,6 +30,7 @@ export interface OidcClientMetadata {
   response_types: string[];
   scope: string;
   token_endpoint_auth_method: string;
+  consent_mode: ConsentMode;
 }
 
 @Injectable()
@@ -75,6 +78,7 @@ export class OauthClientService {
         scopes: dto.scopes ?? ['openid', 'profile', 'email'],
         tokenEndpointAuthMethod: authMethod,
         requirePkce: dto.requirePkce ?? authMethod === 'none',
+        consentMode: dto.consentMode ?? DEFAULT_CONSENT_MODE,
       }),
     );
 
@@ -150,6 +154,7 @@ export class OauthClientService {
       row.tokenEndpointAuthMethod = dto.tokenEndpointAuthMethod;
     }
     if (dto.requirePkce !== undefined) row.requirePkce = dto.requirePkce;
+    if (dto.consentMode !== undefined) row.consentMode = dto.consentMode;
 
     const saved = await this.repo.save(row);
     const application = await this.applicationRepo.findOne({
@@ -208,6 +213,7 @@ export class OauthClientService {
         response_types: c.responseTypes as string[],
         scope: c.scopes.join(' '),
         token_endpoint_auth_method: c.tokenEndpointAuthMethod,
+        consent_mode: c.consentMode ?? DEFAULT_CONSENT_MODE,
       };
       if (c.tokenEndpointAuthMethod === 'none') {
         delete meta.client_secret;
@@ -253,6 +259,7 @@ export class OauthClientService {
       scopes: row.scopes,
       tokenEndpointAuthMethod: row.tokenEndpointAuthMethod,
       requirePkce: row.requirePkce,
+      consentMode: row.consentMode ?? DEFAULT_CONSENT_MODE,
       application: this.toApplicationBrief(application),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

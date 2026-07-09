@@ -1,6 +1,8 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { OidcSessionAdminService } from '../../../security/oidc/services/oidc-session-admin.service';
+import { OidcBearerGuard } from '../../../security/guards/oidc-bearer.guard';
 import { AuthService } from '../services/auth.service';
 
 class RegisterDto {
@@ -30,7 +32,10 @@ class LoginDto {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly oidcSessionAdmin: OidcSessionAdminService,
+  ) {}
 
   @Post('register')
   async register(@Body() dto: RegisterDto) {
@@ -49,6 +54,21 @@ export class AuthController {
   @Post('logout')
   async logout(@Body('token') token: string) {
     await this.authService.logout(token);
+    return { success: true };
+  }
+
+  /**
+   * 业务系统本地退出：仅吊销当前 Bearer access_token，不销毁 IdP SSO Session。
+   * 全局退出请走 /oidc/session/end（RP-Initiated Logout）。
+   */
+  @Post('oidc-local-logout')
+  @UseGuards(OidcBearerGuard)
+  async oidcLocalLogout(@Req() req: Request) {
+    const header = req.headers.authorization ?? '';
+    const accessToken = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    if (accessToken) {
+      await this.oidcSessionAdmin.revokeAccessTokenOnly(accessToken);
+    }
     return { success: true };
   }
 }

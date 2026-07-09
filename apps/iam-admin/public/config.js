@@ -1,5 +1,13 @@
 /** iam-client OIDC SSO（按 hostname 自动切换 localhost / Nginx 子域） */
 (function () {
+  const isLocalHost =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  const cookieSuffix = isLocalHost ? "-" + (location.port || "80") : "";
+  window.IAM_APP_COOKIE_KEYS = {
+    token: "authorized-token" + cookieSuffix,
+    multipleTabs: "multiple-tabs" + cookieSuffix
+  };
+
   const nginx = location.hostname.endsWith(".pinshuai.local");
   window.IAM_CLIENT_CONFIG = nginx
     ? {

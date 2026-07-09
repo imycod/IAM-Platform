@@ -1,3 +1,5 @@
+import type { ConsentMode } from '../constants/consent-mode';
+
 export interface OauthClientApplicationBrief {
   id: string;
   name: string;
@@ -19,6 +21,7 @@ export interface OauthClientDetailDto {
   scopes: string[];
   tokenEndpointAuthMethod: string;
   requirePkce: boolean;
+  consentMode: ConsentMode;
   application: OauthClientApplicationBrief | null;
   createdAt: Date;
   updatedAt: Date;

@@ -411,6 +411,16 @@ async function initOidcLoginPage() {
     const forceExpired =
       !!loginErrorCode && IamLoginSsoSync.isInvalidInteractionError(loginErrorCode);
     await IamLoginSsoSync.initSsoSync(interactionUid, { forceExpired });
+    const meta = IamLoginSsoSync.getInteractionMeta();
+    if (meta?.prompt === 'consent') {
+      const consentUrl = new URL('consent.html', window.location.href);
+      consentUrl.searchParams.set('uid', interactionUid);
+      if (meta.clientId) {
+        consentUrl.searchParams.set('client_id', meta.clientId);
+      }
+      window.location.replace(consentUrl.toString());
+      return;
+    }
   }
 
   if (loginErrorCode === 'invalid_credentials') {

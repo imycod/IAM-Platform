@@ -13,6 +13,7 @@ import { LoginType } from '../../../identity/login-history/entities/login-histor
 import { OidcPayloadEntity } from '../entities/oidc-payload.entity';
 import { createOidcAdapter } from '../adapters/oidc-payload.adapter';
 import { OauthClientService } from '../../oauth-client/services/oauth-client.service';
+import { DEFAULT_CONSENT_MODE } from '../../oauth-client/constants/consent-mode';
 import { ApplicationService } from '../../../application/services/application.service';
 
 type RequestListener = (req: unknown, res: unknown) => void;
@@ -65,6 +66,7 @@ export class OidcService implements IOidcInteraction {
           id: c.client_id,
           uris: c.redirect_uris.sort(),
           postLogout: (c.post_logout_redirect_uris ?? []).sort(),
+          consentMode: c.consent_mode,
         }))
         .sort((a, b) => a.id.localeCompare(b.id)),
     );
@@ -88,6 +90,7 @@ export class OidcService implements IOidcInteraction {
     const appCfg = this.config.getOrThrow<AppConfig>('app');
     const prefix = appCfg.globalPrefix;
     const iamLoginUrl = appCfg.iamLoginUrl;
+    const iamApiBase = appCfg.url.replace(/\/$/, '');
     const clients = await this.oauthClientService.toOidcClients();
     const sessionTtlRaw = this.config.get<string>('OIDC_SESSION_TTL_SECONDS');
     const sessionTtlSeconds = sessionTtlRaw ? parseInt(sessionTtlRaw, 10) : 14 * 24 * 60 * 60;
@@ -152,10 +155,19 @@ export class OidcService implements IOidcInteraction {
       interactions: {
         url: (
           _ctx: unknown,
-          interaction: { uid: string; params?: Record<string, unknown> },
+          interaction: {
+            uid: string;
+            params?: Record<string, unknown>;
+            prompt?: { name?: string };
+          },
         ) => {
           if (!iamLoginUrl) {
             return `/${prefix}/interaction/${interaction.uid}`;
+          }
+          // consent 必须先走 IAM 同源 /interaction，浏览器才能带上 _interaction cookie，
+          // 再由 InteractionController 302 到 consent.html；直连 4180 跨域 fetch 读不到 cookie。
+          if (interaction.prompt?.name === 'consent') {
+            return `${iamApiBase}/${prefix}/interaction/${interaction.uid}`;
           }
           const loginUrl = new URL(iamLoginUrl);
           loginUrl.searchParams.set('uid', interaction.uid);
@@ -167,8 +179,10 @@ export class OidcService implements IOidcInteraction {
         },
       },
       /**
-       * 演示环境：用户登录后自动建立 Grant 并授权请求的 scope，跳过 consent 确认页。
-       * 否则 resume 到 /oidc/auth/:uid 后会再次进入 consent 交互，导致无法跳回 flow-admin。
+       * 按 oauth_client.consentMode 决定是否自动建立 Grant：
+       * - never：自动授权（跳过 consent 确认页）
+       * - first_time：仅复用已有 Grant，首次需用户确认
+       * - always：不复用已有 Grant，每次均需用户确认
        */
       loadExistingGrant: async (ctx: {
         oidc: {
@@ -185,9 +199,26 @@ export class OidcService implements IOidcInteraction {
       }) => {
         const { oidc } = ctx;
         const clientId = oidc.client?.clientId;
+        if (!clientId) {
+          return undefined;
+        }
+
+        const oauthClient = await this.oauthClientService.findByClientId(clientId);
+        const consentMode = oauthClient?.consentMode ?? DEFAULT_CONSENT_MODE;
+
+        // 当前 interaction 刚完成 consent 时，必须使用本次提交的 grant（避免 always 模式死循环）
+        const justConsentedId = oidc.result?.consent?.grantId;
+        if (justConsentedId) {
+          const justConsented = await oidc.provider.Grant.find(justConsentedId);
+          if (justConsented) {
+            return justConsented;
+          }
+        }
+
         const existingId =
-          oidc.result?.consent?.grantId ??
-          (clientId ? oidc.session?.grantIdFor(clientId) : undefined);
+          consentMode === 'always'
+            ? undefined
+            : oidc.session?.grantIdFor(clientId);
         if (existingId) {
           const existing = await oidc.provider.Grant.find(existingId);
           if (existing) {
@@ -196,7 +227,11 @@ export class OidcService implements IOidcInteraction {
         }
 
         const accountId = oidc.session?.accountId;
-        if (!accountId || !oidc.client || !clientId) {
+        if (!accountId || !oidc.client) {
+          return undefined;
+        }
+
+        if (consentMode !== 'never') {
           return undefined;
         }
 
@@ -294,17 +329,18 @@ export class OidcService implements IOidcInteraction {
     const host = req?.headers?.host?.split(':')[0] ?? '';
     const cookieOpts = {
       maxAge: 60_000,
-      path: '/',
+      // Path 限定在 /oidc，避免 localhost 多端口共享 host 时被其它 SPA 误读
+      path: '/oidc',
       sameSite: 'lax' as const,
       httpOnly: false,
-      ...(host.endsWith('iam.local') ? { domain: '.pinshuai.local' } : {}),
+      ...(host.endsWith('pinshuai.local') ? { domain: '.pinshuai.local' } : {}),
     };
     if (typeof res.cookie === 'function') {
       res.cookie('iam_sso_logout_event', value, cookieOpts);
       return;
     }
-    let header = `iam_sso_logout_event=${encodeURIComponent(value)}; Max-Age=60; Path=/; SameSite=Lax`;
-    if (host.endsWith('iam.local')) {
+    let header = `iam_sso_logout_event=${encodeURIComponent(value)}; Max-Age=60; Path=/oidc; SameSite=Lax`;
+    if (host.endsWith('pinshuai.local')) {
       header += '; Domain=.pinshuai.local';
     }
     res.setHeader('Set-Cookie', header);
@@ -432,6 +468,11 @@ export class OidcService implements IOidcInteraction {
       },
       { mergeWithLastSubmission: true },
     );
+  }
+
+  async shouldAutoConsent(clientId: string): Promise<boolean> {
+    const client = await this.oauthClientService.findByClientId(clientId);
+    return (client?.consentMode ?? DEFAULT_CONSENT_MODE) === 'never';
   }
 
   async finishConsent(req: unknown, res: unknown): Promise<void> {

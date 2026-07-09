@@ -19,6 +19,7 @@ import {
   clearLocalSsoSession,
   clearOidcPkceState,
   performGlobalLogout,
+  revokeCurrentOidcAccessToken,
   skipAutoSso
 } from "@/utils/oidc";
 import {
@@ -90,8 +91,11 @@ export const useUserStore = defineStore("pure-user", {
           });
       });
     },
-    /** 本地登出（IdP 已全局登出或其它 Tab 触发） */
-    logOutLocal() {
+    /** 本地登出：仅清本应用 token（IdP 全局登出或其它 Tab 同步时调用） */
+    async logOutLocal() {
+      if (isSsoSession()) {
+        await revokeCurrentOidcAccessToken();
+      }
       skipAutoSso();
       clearLoginMethod();
       this.username = "";
@@ -104,8 +108,16 @@ export const useUserStore = defineStore("pure-user", {
       resetRouter();
       router.push("/login");
     },
-    /** SSO 会话全局登出；账密会话仅清本地 */
+    /** IAM 管理后台：SSO 退出 = 全局登出（所有接入系统同步退出） */
     logOut() {
+      if (isSsoSession()) {
+        this.logOutGlobal();
+      } else {
+        this.logOutLocal();
+      }
+    },
+    /** 退出统一登录（销毁 IdP SSO 会话，并同步登出其它已接入应用） */
+    logOutGlobal() {
       if (isSsoSession()) {
         performGlobalLogout();
       } else {

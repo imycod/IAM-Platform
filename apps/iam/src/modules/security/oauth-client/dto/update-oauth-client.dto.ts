@@ -9,6 +9,8 @@ import {
   MaxLength,
 } from 'class-validator';
 
+import { CONSENT_MODES } from '../constants/consent-mode';
+
 const TOKEN_AUTH_METHODS = ['none', 'client_secret_basic', 'client_secret_post'] as const;
 
 export class UpdateOauthClientDto {
@@ -45,4 +47,8 @@ export class UpdateOauthClientDto {
   @IsOptional()
   @IsBoolean()
   requirePkce?: boolean;
+
+  @IsOptional()
+  @IsIn(CONSENT_MODES)
+  consentMode?: (typeof CONSENT_MODES)[number];
 }

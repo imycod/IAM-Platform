@@ -59,7 +59,7 @@ getPlatformConfig(app).then(async config => {
   app.use(router);
   await router.isReady();
   setupSsoLogoutSync(() => {
-    useUserStoreHook().logOutLocal();
+    void useUserStoreHook().logOutLocal();
   });
   injectResponsiveStorage(app, config);
   app.use(MotionPlugin).use(useElementPlus).use(Table);

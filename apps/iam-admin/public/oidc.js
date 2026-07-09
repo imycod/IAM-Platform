@@ -147,10 +147,19 @@
     clearAllPkceState();
   }
 
+  function appCookieKeys() {
+    const fromWindow = global.IAM_APP_COOKIE_KEYS;
+    if (fromWindow?.token) {
+      return fromWindow;
+    }
+    return { token: "authorized-token", multipleTabs: "multiple-tabs" };
+  }
+
   function clearPortalSession() {
     clearSession();
-    document.cookie = "authorized-token=; Max-Age=0; path=/";
-    document.cookie = "multiple-tabs=; Max-Age=0; path=/";
+    const keys = appCookieKeys();
+    document.cookie = keys.token + "=; Max-Age=0; path=/";
+    document.cookie = keys.multipleTabs + "=; Max-Age=0; path=/";
     localStorage.removeItem("user-info");
     sessionStorage.removeItem("iam_client_login_method");
   }
@@ -220,14 +229,15 @@
     const expiresMs = Date.now() + expiresIn * 1000;
     const accessToken = tokens.access_token;
     const refreshToken = tokens.refresh_token || accessToken;
+    const keys = appCookieKeys();
 
     const tokenCookie = JSON.stringify({
       accessToken,
       expires: expiresMs,
       refreshToken
     });
-    document.cookie = `authorized-token=${encodeURIComponent(tokenCookie)}; path=/`;
-    document.cookie = "multiple-tabs=true; path=/";
+    document.cookie = keys.token + "=" + encodeURIComponent(tokenCookie) + "; path=/";
+    document.cookie = keys.multipleTabs + "=true; path=/";
 
     const userInfo = {
       refreshToken,

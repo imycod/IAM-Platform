@@ -35,6 +35,9 @@ export interface IOidcInteraction {
   /** 完成 consent 交互（自动授权 scope），演示环境跳过授权确认页。 */
   finishConsent(req: unknown, res: unknown): Promise<void>;
 
+  /** consentMode=never 时自动完成 consent，否则需用户确认。 */
+  shouldAutoConsent(clientId: string): Promise<boolean>;
+
   /** 用户取消 / 失败时中止交互。 */
   abort(req: unknown, res: unknown, error: string, description?: string): Promise<void>;
 }

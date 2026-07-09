@@ -45,6 +45,36 @@ function renderLoginPage(uid: string): string {
 </html>`;
 }
 
+function renderConsentPage(uid: string, clientId: string, scopes: string[]): string {
+  const scopeText = scopes.length ? scopes.join(' ') : 'openid profile email';
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>授权确认</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 420px; margin: 48px auto; padding: 0 16px; }
+    h1 { font-size: 1.25rem; }
+    .scopes { background: #f5f5f5; padding: 12px; border-radius: 8px; font-size: 0.875rem; }
+    .actions { display: flex; gap: 12px; margin-top: 20px; }
+    button { flex: 1; padding: 10px; cursor: pointer; }
+    .deny { background: #fff; border: 1px solid #ccc; }
+    .approve { background: #1677ff; color: #fff; border: none; }
+  </style>
+</head>
+<body>
+  <h1>授权确认</h1>
+  <p>应用 <strong>${clientId}</strong> 请求访问以下信息：</p>
+  <div class="scopes">${scopeText}</div>
+  <form class="actions" method="POST" action="/api/interaction/${uid}/consent">
+    <button type="submit" name="action" value="deny" class="deny">拒绝</button>
+    <button type="submit" name="action" value="approve" class="approve">同意授权</button>
+  </form>
+</body>
+</html>`;
+}
+
 /** 用于重建 /oidc/auth 的授权请求参数（不含 interaction 内部字段）。 */
 const OIDC_AUTH_PARAM_KEYS = [
   'client_id',
@@ -157,6 +187,31 @@ export class InteractionController {
     url.searchParams.set('uid', uid);
     if (clientId) {
       url.searchParams.set('client_id', clientId);
+    }
+    if (error) {
+      url.searchParams.set('error', error);
+    }
+    res.redirect(url.toString());
+  }
+
+  private redirectToConsentPage(
+    res: Response,
+    uid: string,
+    clientId?: string,
+    scope?: string,
+    error?: string,
+  ): void {
+    const base = this.getIamLoginUrl();
+    if (!base) {
+      return;
+    }
+    const url = new URL('consent.html', base.endsWith('/') ? base : `${base}/`);
+    url.searchParams.set('uid', uid);
+    if (clientId) {
+      url.searchParams.set('client_id', clientId);
+    }
+    if (scope) {
+      url.searchParams.set('scope', scope);
     }
     if (error) {
       url.searchParams.set('error', error);
@@ -299,9 +354,35 @@ export class InteractionController {
       throw mismatch;
     }
 
-    // 登录后若仍需 consent，自动完成授权（避免卡在 /oidc/auth/:resume 303 循环）
+    // consentMode=never 时自动完成授权；否则展示授权确认页
     if (details.prompt?.name === 'consent') {
-      await oidc.finishConsent(req, res);
+      const clientId = details.params.client_id as string | undefined;
+      if (clientId && (await oidc.shouldAutoConsent(clientId))) {
+        await oidc.finishConsent(req, res);
+        return;
+      }
+
+      const iamLoginUrl = this.getIamLoginUrl();
+      if (iamLoginUrl) {
+        const scopeStr = details.params.scope as string | undefined;
+        this.redirectToConsentPage(res, uid, clientId, scopeStr);
+        return;
+      }
+
+      const scopeStr = details.params.scope as string | undefined;
+      const scopes = scopeStr?.split(' ').filter(Boolean) ?? ['openid', 'profile', 'email'];
+      const accept = req.headers.accept ?? '';
+      if (accept.includes('text/html')) {
+        res.type('html').send(renderConsentPage(uid, clientId ?? 'unknown', scopes));
+        return;
+      }
+      res.json({
+        uid: details.uid,
+        prompt: details.prompt,
+        clientId,
+        scopes,
+        consentRequired: true,
+      });
       return;
     }
 
@@ -337,7 +418,6 @@ export class InteractionController {
   async login(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const email = String(req.body?.email ?? '').trim();
     const password = String(req.body?.password ?? '');
-    debugger
     if (!email || !password) {
       if (this.getIamLoginUrl()) {
         this.redirectToLoginPage(res, uid, 'missing_credentials');
@@ -389,6 +469,39 @@ export class InteractionController {
       }
       throw new UnauthorizedException('邮箱或密码错误');
     }
+  }
+
+  @Post(':uid/consent')
+  async consent(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
+    const oidc = this.ensureOidc();
+    let details;
+
+    try {
+      details = await oidc.getDetails(req, res);
+      this.assertInteractionUid(details, uid);
+    } catch (err) {
+      if (this.getIamLoginUrl() && this.isInvalidInteractionError(err)) {
+        const clientId =
+          (details?.params?.client_id as string | undefined) ||
+          (req.body?.client_id as string | undefined);
+        this.redirectToConsentPage(res, uid, clientId, undefined, 'interaction_expired');
+        return;
+      }
+      throw err;
+    }
+
+    if (details.prompt?.name !== 'consent') {
+      throw new NotFoundException({ code: 'consent_not_required' });
+    }
+
+    const action = String(req.body?.action ?? 'approve').trim();
+    const clientId = details.params?.client_id as string | undefined;
+    if (action === 'deny') {
+      await oidc.abort(req, res, 'access_denied', '用户拒绝授权');
+      return;
+    }
+
+    await oidc.finishConsent(req, res);
   }
 
   @Post(':uid/abort')

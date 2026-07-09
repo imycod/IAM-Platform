@@ -87,8 +87,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
     }
     clearSkipAutoSso();
     clearOidcRedirectLock();
-    const iamSession = await checkIamSsoSession();
-    await beginAuthorize(iamSession);
+    await beginAuthorize(false);
   }
 
   onMounted(async () => {
@@ -106,6 +105,11 @@ export function useSsoLoginPage(onEnterApp: () => void) {
     }
 
     const routeQuery = getLoginRouteQuery();
+    if (routeQuery.get("sso_error") === "access_denied") {
+      statusText.value = "您已拒绝授权，请重新点击 IAM 登录。";
+      phase.value = "ready";
+      return;
+    }
     if (routeQuery.get("sso_interactive") === "1") {
       clearSkipAutoSso();
       await beginAuthorize(false);

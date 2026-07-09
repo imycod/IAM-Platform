@@ -237,6 +237,25 @@ export function clearLocalSsoSession(): void {
   clearOidcPkceState();
 }
 
+/** 吊销当前 access_token，保留 IdP SSO Session（业务系统本地退出） */
+export async function revokeCurrentOidcAccessToken(
+  cfg: IamClientConfig = IAM_CLIENT_CONFIG
+): Promise<void> {
+  const tokens = getStoredOidcTokens();
+  const accessToken = tokens?.access_token;
+  if (!accessToken) {
+    return;
+  }
+  try {
+    await fetch(`${cfg.iamBaseUrl.replace(/\/$/, "")}/api/auth/oidc-local-logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+  } catch {
+    // ignore
+  }
+}
+
 /** RP-Initiated Logout：销毁 IdP SSO 会话并通知其它已登录应用 */
 export function performGlobalLogout(
   cfg: IamClientConfig = IAM_CLIENT_CONFIG

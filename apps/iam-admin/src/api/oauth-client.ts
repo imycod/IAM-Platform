@@ -9,6 +9,8 @@ export interface OauthClientApplicationBrief {
   status: string;
 }
 
+export type ConsentMode = 'always' | 'first_time' | 'never';
+
 export interface OauthClientItem {
   id: string;
   applicationId: string;
@@ -21,6 +23,7 @@ export interface OauthClientItem {
   scopes: string[];
   tokenEndpointAuthMethod: string;
   requirePkce: boolean;
+  consentMode: ConsentMode;
   application?: OauthClientApplicationBrief | null;
   createdAt?: string;
   updatedAt?: string;
@@ -35,6 +38,7 @@ export interface OauthClientForm {
   scopes?: string[];
   tokenEndpointAuthMethod?: string;
   requirePkce?: boolean;
+  consentMode?: ConsentMode;
 }
 
 export interface OauthClientUpdateForm {
@@ -45,6 +49,7 @@ export interface OauthClientUpdateForm {
   scopes?: string[];
   tokenEndpointAuthMethod?: string;
   requirePkce?: boolean;
+  consentMode?: ConsentMode;
 }
 
 export const getOauthClients = (params?: {

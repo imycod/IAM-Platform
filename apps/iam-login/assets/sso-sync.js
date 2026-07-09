@@ -8,6 +8,7 @@
   const LS_KEY = 'iam_sso_login_event';
   const LOGOUT_EVENT_COOKIE = 'iam_sso_logout_event';
   const CTX_PREFIX = 'iam_login_ctx:';
+  const CLIENT_CTX_PREFIX = 'iam_login_client_ctx:';
   const INTENT_PREFIX = 'iam_login_page_intent:';
   const RESTART_GUARD_PREFIX = 'iam_restart_guard:';
   const PAGE_LOAD_TS = Date.now();
@@ -51,6 +52,58 @@
     return json;
   }
 
+  function clientCtxKey(clientId) {
+    return CLIENT_CTX_PREFIX + clientId;
+  }
+
+  function saveClientLoginCtx(clientId, meta) {
+    if (!clientId || !meta?.restartAuthUrl) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(
+        clientCtxKey(clientId),
+        JSON.stringify({
+          clientId,
+          restartAuthUrl: meta.restartAuthUrl,
+          appReturnUrl: meta.appReturnUrl || null,
+          ts: Date.now(),
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  function loadClientLoginCtx(clientId) {
+    if (!clientId) {
+      return null;
+    }
+    try {
+      const raw = sessionStorage.getItem(clientCtxKey(clientId));
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getTabClientId(uid) {
+    return resolveIntendedClientId(uid || currentUid);
+  }
+
+  function resolveRestartAuthUrl(uid) {
+    uid = uid || currentUid;
+    const clientId = getTabClientId(uid);
+    const ctx = uid ? loadLoginCtx(uid) : null;
+    const clientCtx = clientId ? loadClientLoginCtx(clientId) : null;
+    return (
+      ctx?.restartAuthUrl ||
+      (interactionMeta && interactionMeta.uid === uid && interactionMeta.restartAuthUrl) ||
+      clientCtx?.restartAuthUrl ||
+      null
+    );
+  }
+
   function saveLoginCtx(uid, meta) {
     if (!uid || !meta || meta.uid !== uid) {
       return;
@@ -69,6 +122,9 @@
           appReturnUrl: meta.appReturnUrl || prev?.appReturnUrl || null,
         })
       );
+      if (meta.clientId && meta.restartAuthUrl) {
+        saveClientLoginCtx(meta.clientId, meta);
+      }
     } catch {
       // ignore
     }
@@ -223,6 +279,10 @@
 
     // 跨应用 / cookie 不一致：用保存的 OIDC auth URL 重建链路（SSO 会话会跳过密码）
     if (resumeReasons.indexOf(reason) >= 0) {
+      const restartUrl = resolveRestartAuthUrl(uid);
+      if (restartUrl) {
+        return restartUrl;
+      }
       if (ctx?.restartAuthUrl) {
         return ctx.restartAuthUrl;
       }
@@ -448,6 +508,32 @@
     }
   }
 
+  function canResumeCurrentInteraction(uid) {
+    return isMetaOk(uid);
+  }
+
+  async function shouldRestartForSession(uid) {
+    const tabClient = getTabClientId(uid);
+    if (!tabClient) {
+      return true;
+    }
+    try {
+      const active = await fetchActiveMeta();
+      if (!active?.uid) {
+        return !!resolveRestartAuthUrl(uid);
+      }
+      if (active.clientId && active.clientId !== tabClient) {
+        return !!resolveRestartAuthUrl(uid);
+      }
+      if (active.uid !== uid) {
+        return !!resolveRestartAuthUrl(uid);
+      }
+      return true;
+    } catch {
+      return !!resolveRestartAuthUrl(uid);
+    }
+  }
+
   function parseLoginEventCookie(raw) {
     const parts = String(raw).split(':');
     return { ts: Number(parts[0]), clientId: parts[1] || '' };
@@ -464,7 +550,15 @@
     if (parsed.ts <= lastLogoutEventTs) {
       return true;
     }
-    return parsed.ts < PAGE_LOAD_TS - LOGIN_EVENT_GRACE_MS;
+    if (parsed.ts < PAGE_LOAD_TS - LOGIN_EVENT_GRACE_MS) {
+      return true;
+    }
+    // 其它 client 在 4180 完成登录时，不要误触发本 Tab 的 resume（_interaction 同时只能有一个）
+    const tabClient = getTabClientId(currentUid);
+    if (parsed.clientId && tabClient && parsed.clientId !== tabClient) {
+      return true;
+    }
+    return false;
   }
 
   function pollLoginCookie() {
@@ -613,12 +707,12 @@
   }
 
   async function tryAutoLoginWithSso(uid) {
-    const ctx = loadLoginCtx(uid);
+    const restartUrl = resolveRestartAuthUrl(uid);
     const hasSession = (interactionMeta && interactionMeta.hasSession) || (await checkIamSession());
     if (!hasSession) {
       return false;
     }
-    if (!ctx?.restartAuthUrl && !interactionMeta?.restartAuthUrl) {
+    if (!restartUrl && !canResumeCurrentInteraction(uid)) {
       return false;
     }
     restartAuthChain('existing_session', uid);
@@ -635,6 +729,10 @@
       if (toastShown) {
         resetLoginPageState();
       }
+      return;
+    }
+
+    if (!(await shouldRestartForSession(currentUid))) {
       return;
     }
 
@@ -680,6 +778,9 @@
 
     try {
       interactionMeta = await fetchActiveMeta();
+      if (interactionMeta?.clientId && interactionMeta?.restartAuthUrl) {
+        saveClientLoginCtx(interactionMeta.clientId, interactionMeta);
+      }
       if (interactionMeta && interactionMeta.uid !== uid) {
         const intendedClient = resolveIntendedClientId(uid);
         if (
@@ -708,7 +809,7 @@
     if (interactionMeta?.mismatch || interactionMeta?.expired) {
       if (forceExpired) {
         if (!(await tryAutoLoginWithSso(uid))) {
-          showInteractionBlocked('interaction_expired');
+          showInteractionBlocked(interactionMeta?.mismatch ? 'interaction_mismatch' : 'interaction_expired');
         }
         return interactionMeta;
       }
@@ -716,6 +817,7 @@
         return interactionMeta;
       }
       if (interactionMeta?.mismatch) {
+        showInteractionBlocked('interaction_mismatch');
         return interactionMeta;
       }
       if (interactionMeta?.expired) {
@@ -734,7 +836,9 @@
         global.location.replace(consentUrl.toString());
         return interactionMeta;
       }
-      restartAuthChain('existing_session', uid);
+      if (canResumeCurrentInteraction(uid) || resolveRestartAuthUrl(uid)) {
+        restartAuthChain('existing_session', uid);
+      }
       return interactionMeta;
     }
 
@@ -742,7 +846,11 @@
   }
 
   function isInvalidInteractionError(errorCode) {
-    return errorCode === 'interaction_expired' || errorCode === 'invalid_session';
+    return (
+      errorCode === 'interaction_expired' ||
+      errorCode === 'interaction_mismatch' ||
+      errorCode === 'invalid_session'
+    );
   }
 
   global.IamLoginSsoSync = {

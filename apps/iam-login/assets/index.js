@@ -390,6 +390,8 @@ const ERROR_MESSAGES = {
   missing_credentials: 'Please enter your email and password.',
   missing_uid: 'Invalid login session. Please start sign-in from your application again.',
   interaction_expired: 'Login session expired. Please return to your app and click SSO again.',
+  interaction_mismatch:
+    'Another app is signing in. Please close this tab and click SSO again from your application.',
   invalid_session: 'Login session expired. Please return to your app and click SSO again.',
 };
 

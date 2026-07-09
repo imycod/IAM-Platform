@@ -329,6 +329,26 @@ export class InteractionController {
     res.json({ authenticated: !!accountId });
   }
 
+  /**
+   * URL uid 与 _interaction cookie 不一致时：
+   * - 同一 client：同步到 cookie 中的有效 uid（stale tab）
+   * - 跨 client：返回 interaction_mismatch，由前端按 client 重建授权链
+   */
+  private handleInteractionUidMismatch(
+    res: Response,
+    req: Request,
+    urlUid: string,
+    details: { uid: string; params?: Record<string, unknown> },
+  ): void {
+    const activeClientId = details.params?.client_id as string | undefined;
+    const urlClientId = req.query.client_id as string | undefined;
+    if (urlClientId && activeClientId && urlClientId === activeClientId) {
+      this.redirectToLoginPage(res, details.uid, undefined, activeClientId);
+      return;
+    }
+    this.redirectToLoginPage(res, urlUid, 'interaction_mismatch', activeClientId ?? urlClientId);
+  }
+
   @Get(':uid')
   async details(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const oidc = this.ensureOidc();
@@ -347,8 +367,7 @@ export class InteractionController {
       this.assertInteractionUid(details, uid);
     } catch (mismatch) {
       if (this.getIamLoginUrl()) {
-        const cid = details.params?.client_id as string | undefined;
-        this.redirectToLoginPage(res, uid, 'interaction_expired', cid);
+        this.handleInteractionUidMismatch(res, req, uid, details);
         return;
       }
       throw mismatch;
@@ -441,9 +460,10 @@ export class InteractionController {
         this.getIamLoginUrl() &&
         err instanceof NotFoundException &&
         typeof (err.getResponse() as { code?: string })?.code === 'string' &&
-        (err.getResponse() as { code: string }).code === 'interaction_mismatch'
+        (err.getResponse() as { code: string }).code === 'interaction_mismatch' &&
+        details
       ) {
-        this.redirectToLoginPage(res, uid, 'interaction_expired');
+        this.handleInteractionUidMismatch(res, req, uid, details);
         return;
       }
       throw err;

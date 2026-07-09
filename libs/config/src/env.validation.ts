@@ -25,7 +25,7 @@ export const envValidationSchema = Joi.object({
   BETTER_AUTH_SECRET: Joi.string().optional(),
   BETTER_AUTH_URL: Joi.string().uri().optional(),
 
-  // OIDC（后续接入）
+  // OIDC
   OIDC_ISSUER: Joi.string().uri().optional(),
   OIDC_COOKIE_KEYS: Joi.string().optional(),
   /** OIDC SSO Session TTL（秒），默认 14 天；测试可设 20 */
@@ -33,4 +33,11 @@ export const envValidationSchema = Joi.object({
 
   /** 统一登录页（iam-login）地址，OIDC interaction 会跳转至此 */
   IAM_LOGIN_URL: Joi.string().uri().optional(),
+  IAM_LOGIN_PORT: Joi.number().integer().min(1).optional(),
+
+  /** CORS 允许 Origin，逗号分隔 */
+  CORS_ORIGINS: Joi.string().optional(),
+
+  /** client_id → 应用回跳 URL 的 JSON 映射 */
+  APP_RETURN_URLS: Joi.string().optional(),
 });

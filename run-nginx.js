@@ -56,19 +56,19 @@ function shutdown() {
 }
 
 async function main() {
-  console.log('\n=== Nginx 子域模式 (admin/login/api/flow.pinshuai.local) ===');
+  console.log('\n=== Nginx 子域模式 (admin/auth/api/flow.pinshuai.local) ===');
   console.log('请确认 hosts 已配置且 docker nginx 已启动：');
   console.log('  docker compose -f deploy/docker-compose.nginx.yaml up -d\n');
 
-  start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root);
+  start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root, { NODE_ENV: 'nginx' });
   await sleep(4000);
 
-  start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root);
+  start('iam-login', 'pnpm', ['run', 'iam-login:dev:nginx'], root, { NODE_ENV: 'nginx' });
   await sleep(2000);
 
-  start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);
+  start('iam-admin', 'pnpm', ['run', 'dev:nginx'], adminDir, { NODE_ENV: 'nginx' });
 
-  console.log('\n访问 http://admin.pinshuai.local （未登录应跳转 http://login.pinshuai.local）');
+  console.log('\n访问 http://admin.pinshuai.local （未登录应跳转 http://auth.pinshuai.local）');
   console.log('Press Ctrl+C to stop.\n');
 }
 

@@ -1,4 +1,4 @@
-import dataSource from '../data-source';
+﻿import dataSource from '../data-source';
 import { ApplicationEntity } from '../../modules/application/application/entities/application.entity';
 import { OauthClientEntity } from '../../modules/security/oauth-client/entities/oauth-client.entity';
 import { devRedirectUris, mergeRedirectUris, nginxRedirectUris } from './oauth-redirect-uri.util';
@@ -8,7 +8,7 @@ export const IAM_ADMIN_SPA_CLIENT_ID = 'iam-admin-spa';
 
 /** iam-admin：直连端口 + Nginx 子域 */
 export const IAM_ADMIN_SPA_REDIRECT_URIS = [
-  ...devRedirectUris([8848, 5173]),
+  ...devRedirectUris([8088, 5173]),
   ...nginxRedirectUris(['admin.pinshuai.local']),
 ];
 

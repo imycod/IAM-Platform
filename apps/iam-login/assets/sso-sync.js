@@ -1,6 +1,6 @@
-/**
+﻿/**
  * iam-login 跨 Tab SSO 同步
- * 任一应用在 login.pinshuai.local 完成登录后，其它 Tab 利用 IdP SSO 会话自动续登。
+ * 任一应用在 auth 域完成登录后，其它登录 Tab 利用 IdP SSO 会话自动续登。
  * 注意：浏览器 _interaction cookie 同时只能有一个，跨应用时走 restartAuthUrl 重建授权链。
  */
 (function (global) {
@@ -188,10 +188,16 @@
     if (clientId && cfg.appReturnUrls && cfg.appReturnUrls[clientId]) {
       return cfg.appReturnUrls[clientId];
     }
+    if (interactionMeta?.appReturnUrl && interactionMeta.clientId === clientId) {
+      return interactionMeta.appReturnUrl;
+    }
     return null;
   }
 
   function appLoginUrl(clientId) {
+    if (interactionMeta?.appLoginUrl && (!clientId || interactionMeta.clientId === clientId)) {
+      return interactionMeta.appLoginUrl;
+    }
     const base = resolveAppReturnUrl(clientId);
     if (!base) {
       return null;
@@ -227,10 +233,10 @@
 
   function inferClientFromReferrer() {
     const ref = document.referrer || '';
-    if (ref.indexOf('admin.pinshuai.local') >= 0 || ref.indexOf(':8848') >= 0) {
+    if (ref.indexOf('admin.pinshuai.local') >= 0 || ref.indexOf(':8088') >= 0) {
       return 'iam-admin-spa';
     }
-    if (ref.indexOf('flow.pinshuai.local') >= 0 || ref.indexOf(':8849') >= 0) {
+    if (ref.indexOf('flow.pinshuai.local') >= 0 || ref.indexOf(':8089') >= 0) {
       return 'flow-admin-spa';
     }
     return null;
@@ -294,7 +300,13 @@
     const ctx = uid ? loadLoginCtx(uid) : null;
     const metaOk = isMetaOk(uid);
 
+    // 过期 / 串号：优先用本 client 保存的 /oidc/auth 重建全新 interaction，
+    // 避免卡在死 uid；没有 restartAuthUrl 再回应用登录页。
     if (reason === 'interaction_expired' || reason === 'interaction_mismatch') {
+      const restartUrl = resolveRestartAuthUrl(uid);
+      if (restartUrl) {
+        return restartUrl;
+      }
       return resolveAppFallback(uid);
     }
 
@@ -376,9 +388,7 @@
   }
 
   function clearLoginEventCookie() {
-    const host = global.location.hostname;
-    const domain = host.endsWith('iam.local') ? '; domain=.pinshuai.local' : '';
-    document.cookie = 'iam_sso_login_event=; Max-Age=0; path=/' + domain;
+    document.cookie = 'iam_sso_login_event=; Max-Age=0; path=/';
   }
 
   function stopCookiePolling() {
@@ -481,7 +491,7 @@
     unlockLoginForm();
     if (kind === 'interaction_mismatch') {
       showToast(
-        '另一个应用正在登录，请先关闭其它 4180 标签页，或从应用重新点击 SSO 登录。'
+        '另一个应用正在登录。请保留本页，或从应用重新点击 SSO 登录。'
       );
     } else {
       showToast('登录会话已失效，请关闭此页并从应用重新点击 SSO 登录。');
@@ -631,7 +641,11 @@
     if (!res.ok) {
       throw new Error('active_meta_failed');
     }
-    return unwrapApiData(await res.json());
+    const data = unwrapApiData(await res.json());
+    if (data && data.active === false) {
+      return null;
+    }
+    return data;
   }
 
   async function fetchSnapshotMeta(uid) {
@@ -649,6 +663,19 @@
   }
 
   async function fetchInteractionMeta(uid) {
+    // 优先 snapshot-meta：不依赖共享 _interaction cookie，适合 localhost 双 Tab
+    try {
+      const snapshot = await fetchSnapshotMeta(uid);
+      if (snapshot?.uid) {
+        return snapshot;
+      }
+      if (snapshot === null) {
+        return { expired: true, uid };
+      }
+    } catch {
+      // fall through to :uid/meta
+    }
+
     const res = await fetch(
       apiBase() + '/api/interaction/' + encodeURIComponent(uid) + '/meta',
       { credentials: 'include', cache: 'no-store' }
@@ -768,10 +795,13 @@
       }
 
       let activeMeta = null;
-      try {
-        activeMeta = await fetchActiveMeta();
-      } catch {
-        activeMeta = null;
+      // URL 已带 uid 时不要用 active/meta：_interaction 是单例，跨 client 会串号
+      if (!uid) {
+        try {
+          activeMeta = await fetchActiveMeta();
+        } catch {
+          activeMeta = null;
+        }
       }
 
       if (activeMeta?.clientId && activeMeta?.restartAuthUrl && !isCrossClientInteraction(uid, activeMeta)) {
@@ -796,15 +826,12 @@
       const forceExpired = options && options.forceExpired;
 
       try {
-        if (activeMeta && activeMeta.uid === uid && !crossClient) {
-          interactionMeta = activeMeta;
+        // 有 URL uid 时只信本 Tab 的 interaction，不混用 active cookie
+        const fetched = await fetchInteractionMeta(uid);
+        if (fetched) {
+          interactionMeta = Object.assign({}, loadLoginCtx(uid), fetched);
         } else {
-          const fetched = await fetchInteractionMeta(uid);
-          if (fetched) {
-            interactionMeta = Object.assign({}, loadLoginCtx(uid), fetched);
-          } else {
-            interactionMeta = loadLoginCtx(uid) ? { ...loadLoginCtx(uid), expired: true } : null;
-          }
+          interactionMeta = loadLoginCtx(uid) ? { ...loadLoginCtx(uid), expired: true } : null;
         }
       } catch {
         interactionMeta = loadLoginCtx(uid) ? { ...loadLoginCtx(uid), expired: true } : null;
@@ -816,6 +843,18 @@
       }
 
       if (interactionMeta?.mismatch || interactionMeta?.expired) {
+        // 过期时优先重建本 client 的授权链（清会话后旧 uid 常已失效）
+        if (await restartFromSnapshot(uid)) {
+          return interactionMeta;
+        }
+        const restartUrl = resolveRestartAuthUrl(uid);
+        if (restartUrl) {
+          restartAuthChain(
+            interactionMeta?.mismatch ? 'interaction_mismatch' : 'interaction_expired',
+            uid
+          );
+          return interactionMeta;
+        }
         if (forceExpired) {
           if (!(await tryAutoLoginWithSso(uid))) {
             showInteractionBlocked(

@@ -15,27 +15,28 @@ function resolveClientConfig(): IamClientConfig {
   if (fromWindow?.oidcIssuer) {
     return { redirectUri: "", ...fromWindow };
   }
-  const nginx = location.hostname.endsWith(".pinshuai.local");
-  return nginx
-    ? {
-        iamBaseUrl: "http://api.pinshuai.local",
-        oidcIssuer: "http://api.pinshuai.local/oidc",
-        clientId: "iam-admin-spa",
-        redirectUri: "",
-        scopes: "openid profile email",
-        appCode: "iam-admin"
-      }
-    : {
-        iamBaseUrl: "http://localhost:3000",
-        oidcIssuer: "http://localhost:3000/oidc",
-        clientId: "iam-admin-spa",
-        redirectUri: "",
-        scopes: "openid profile email",
-        appCode: "iam-admin"
-      };
+  // 兜底：优先读 Vite 注入的 import.meta.env（构建期），再退回 localhost
+  const env = import.meta.env as Record<string, string | undefined>;
+  return {
+    iamBaseUrl: env.VITE_IAM_BASE_URL || "http://localhost:3000",
+    oidcIssuer: env.VITE_OIDC_ISSUER || "http://localhost:3000/oidc",
+    clientId: env.VITE_OIDC_CLIENT_ID || "iam-admin-spa",
+    redirectUri: "",
+    scopes: env.VITE_OIDC_SCOPES || "openid profile email",
+    appCode: env.VITE_APP_CODE || "iam-admin"
+  };
 }
 
 export const IAM_CLIENT_CONFIG: IamClientConfig = resolveClientConfig();
+
+/** IdP 源（auth 域）：SSO Session cookie 所在域，探测会话必须打这里 */
+export function resolveIdpOrigin(cfg: IamClientConfig = IAM_CLIENT_CONFIG): string {
+  try {
+    return new URL(cfg.oidcIssuer).origin;
+  } catch {
+    return cfg.iamBaseUrl.replace(/\/$/, "");
+  }
+}
 
 export function resolveOidcRedirectUri(
   cfg: IamClientConfig = IAM_CLIENT_CONFIG
@@ -151,8 +152,9 @@ export async function checkIamSsoSession(
   cfg: IamClientConfig = IAM_CLIENT_CONFIG
 ): Promise<boolean> {
   try {
+    // 必须打 IdP 同源（auth），SSO cookie 不在业务 api 域
     const res = await fetch(
-      `${cfg.iamBaseUrl.replace(/\/$/, "")}/api/interaction/sso/status`,
+      `${resolveIdpOrigin(cfg)}/api/interaction/sso/status`,
       { credentials: "include" }
     );
     if (!res.ok) {
@@ -272,7 +274,7 @@ export function performGlobalLogout(
 }
 
 /**
- * 应用入口 SSO：先探测 IAM 会话，有则静默，无则交互式（最终到 login.pinshuai.local?uid=）。
+ * 应用入口 SSO：先探测 IdP 会话，有则静默，无则交互式（最终到 auth 登录页 ?uid=）。
  * 供路由守卫调用，避免先落到 /#/login。
  */
 export async function beginSsoRedirect(

@@ -48,13 +48,21 @@ function resolveAppReturnUrl(clientId) {
   return cfg.appReturnUrls?.[clientId] ?? null;
 }
 
+function resolveAppLoginUrl(clientId) {
+  const base = resolveAppReturnUrl(clientId);
+  if (!base) {
+    return null;
+  }
+  return base.replace(/\/$/, '') + '/#/login?sso_error=access_denied';
+}
+
 function showExpiredState(clientId, message) {
   showError(
     message ||
       'Authorization session expired or was denied. Please return to your application and sign in again.',
   );
   consentForm.style.display = 'none';
-  const backUrl = resolveAppReturnUrl(clientId || urlClientId);
+  const backUrl = resolveAppLoginUrl(clientId || urlClientId) || resolveAppReturnUrl(clientId || urlClientId);
   if (backUrl && returnBtn) {
     returnBtn.href = backUrl;
     returnBtn.style.display = 'inline-flex';
@@ -149,6 +157,11 @@ async function loadMeta() {
   }
 
   if (urlError === 'access_denied') {
+    const loginUrl = resolveAppLoginUrl(urlClientId);
+    if (loginUrl) {
+      window.location.replace(loginUrl);
+      return null;
+    }
     showExpiredState(urlClientId);
     return null;
   }

@@ -1,4 +1,4 @@
-import dayjs from "dayjs";
+﻿import dayjs from "dayjs";
 import { readdir, stat } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -51,7 +51,7 @@ const __APP_INFO__ = {
 const wrapperEnv = (envConf: Recordable): ViteEnv => {
   // 默认值
   const ret: ViteEnv = {
-    VITE_PORT: 8848,
+    VITE_PORT: 8088,
     VITE_PUBLIC_PATH: "",
     VITE_ROUTER_HISTORY: "",
     VITE_CDN: false,

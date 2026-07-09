@@ -20,21 +20,7 @@ async function bootstrap(): Promise<void> {
   expressApp.use(cookieParser());
   expressApp.use(express.urlencoded({ extended: false }));
 
-  const corsOrigins = new Set([
-    'http://localhost:4173',
-    'http://127.0.0.1:4173',
-    'http://localhost:8848',
-    'http://127.0.0.1:8848',
-    'http://127.0.0.1:8849',
-    'http://localhost:8849',
-    'http://localhost:4180',
-    'http://127.0.0.1:4180',
-    // Nginx 子域模拟（deploy/nginx）
-    'http://login.pinshuai.local',
-    'http://api.pinshuai.local',
-    'http://admin.pinshuai.local',
-    'http://flow.pinshuai.local',
-  ]);
+  const corsOrigins = new Set(appCfg.corsOrigins);
   const appUrl = appCfg.url;
   if (appUrl) {
     try {
@@ -49,6 +35,14 @@ async function bootstrap(): Promise<void> {
       corsOrigins.add(new URL(iamLoginUrl).origin);
     } catch {
       // ignore invalid IAM_LOGIN_URL
+    }
+  }
+  const oidcIssuer = config.get<string>('OIDC_ISSUER');
+  if (oidcIssuer) {
+    try {
+      corsOrigins.add(new URL(oidcIssuer).origin);
+    } catch {
+      // ignore invalid OIDC_ISSUER
     }
   }
 
@@ -82,17 +76,23 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   await app.listen(appCfg.port);
-  const oidcIssuer = config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
+  const issuer = config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
   Logger.log(
     `IAM Platform 已启动: ${appCfg.url}/${appCfg.globalPrefix} [${appCfg.env}]`,
     'Bootstrap',
   );
   Logger.log(
-    `OIDC issuer=${oidcIssuer}, IAM_LOGIN_URL=${appCfg.iamLoginUrl ?? '(内置简易页)'}`,
+    `OIDC issuer=${issuer}, IAM_LOGIN_URL=${appCfg.iamLoginUrl ?? '(内置简易页)'}`,
     'Bootstrap',
   );
-  if (appCfg.iamLoginUrl?.includes('localhost') && process.env.NODE_ENV === 'nginx') {
-    Logger.warn('NODE_ENV=nginx 但 IAM_LOGIN_URL 仍指向 localhost，请检查 .env.nginx', 'Bootstrap');
+  if (
+    appCfg.iamLoginUrl?.includes('localhost') &&
+    (process.env.NODE_ENV === 'nginx' || process.env.NODE_ENV === 'production')
+  ) {
+    Logger.warn(
+      `NODE_ENV=${process.env.NODE_ENV} 但 IAM_LOGIN_URL 仍指向 localhost，请检查 .env.${process.env.NODE_ENV}`,
+      'Bootstrap',
+    );
   }
 }
 

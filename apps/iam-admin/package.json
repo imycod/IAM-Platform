@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite",
+    "dev:nginx": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite --mode nginx",
     "serve": "pnpm dev",
     "build": "rimraf dist && cross-env NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "build:staging": "rimraf dist && vite build --mode staging",
+    "build:production": "rimraf dist && vite build --mode production",
     "report": "rimraf dist && vite build",
     "preview": "vite preview",
     "preview:build": "pnpm build && vite preview",

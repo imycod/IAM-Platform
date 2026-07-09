@@ -35,7 +35,8 @@
     "seed:assign-iam-admin-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/assign-iam-admin-admin-role.ts",
     "seed:oauth-iam-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/oauth-iam-admin.ts",
     "flow-admin:dev": "node apps/flow-admin/server.js",
-    "iam-login:dev": "node apps/iam-login/server.js"
+    "iam-login:dev": "cross-env NODE_ENV=development node apps/iam-login/server.js",
+    "iam-login:dev:nginx": "cross-env NODE_ENV=nginx node apps/iam-login/server.js"
   },
   "dependencies": {
     "@casl/ability": "^6.7.2",

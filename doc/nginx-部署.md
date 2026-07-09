@@ -11,18 +11,19 @@ apps
 
 # 部署：
 
-domain
+domain（Google 式：登录 UI 与 OIDC 必须同源 = auth）
 
 ```
-login.pinshuai.com
+auth.pinshuai.com
           │
-          ▼
-      iam-login
+          ├── /          → iam-login（统一登录 / consent）
+          ├── /oidc      → iam（OIDC IdP）
+          └── /api       → iam（interaction 等）
 
 api.pinshuai.com
           │
           ▼
-        iam
+        iam（业务 API；不要把 /oidc 挂在这里）
 
 admin.pinshuai.com
           │
@@ -78,40 +79,59 @@ server {
 }
 ```
 
-login：
+auth（IdP 同源）：
 ```
 server {
-    server_name login.pinshuai.com;
+    server_name auth.pinshuai.com;
+
+    location /oidc {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
+    location /api {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location / {
         root /opt/iam-platform/login/dist;
         try_files $uri /index.html;
     }
-
-    location /api {
-        proxy_pass http://127.0.0.1:3000;
-    }
 }
 ```
 
+api（仅业务）：
 ```
 server {
-    server_name iam.pinshuai.com;
-
-    location / {
-        root /opt/iam-platform/admin/dist;
-        try_files $uri /index.html;
-    }
-
-    location /api {
-        proxy_pass http://127.0.0.1:3000;
-    }
+    server_name api.pinshuai.com;
 
     location /oidc {
+        return 302 https://auth.pinshuai.com$request_uri;
+    }
+
+    location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
+
+admin：
+```
+server {
+    server_name admin.pinshuai.com;
+
+    location / {
+        root /opt/iam-platform/admin/dist;
+        try_files $uri /index.html;
+    }
+}
+```
+
+上线环境变量见仓库根目录 `.env.production`（`OIDC_ISSUER` / `IAM_LOGIN_URL` 均指向 auth 域）。
 

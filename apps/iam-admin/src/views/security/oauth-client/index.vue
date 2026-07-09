@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { PureTableBar } from "@/components/RePureTableBar";
 import { getApplications, type ApplicationItem } from "@/api/application";
 import {
@@ -476,7 +476,7 @@ onMounted(async () => {
             v-model="formModel.redirectUrisText"
             type="textarea"
             :rows="4"
-            placeholder="每行一个，如 http://localhost:8848/callback.html"
+            placeholder="每行一个，如 http://localhost:8088/callback.html"
           />
         </el-form-item>
         <el-form-item label="Scopes">

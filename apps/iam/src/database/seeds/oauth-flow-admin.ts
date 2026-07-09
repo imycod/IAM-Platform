@@ -1,4 +1,4 @@
-import dataSource from '../data-source';
+﻿import dataSource from '../data-source';
 import { ApplicationEntity } from '../../modules/application/application/entities/application.entity';
 import { OauthClientEntity } from '../../modules/security/oauth-client/entities/oauth-client.entity';
 import { devRedirectUris, mergeRedirectUris, nginxRedirectUris } from './oauth-redirect-uri.util';
@@ -7,7 +7,7 @@ const APP_CODE = 'flow-admin';
 export const FLOW_ADMIN_SPA_CLIENT_ID = 'flow-admin-spa';
 /** flow-admin：直连端口 + Nginx 子域 */
 export const FLOW_ADMIN_SPA_REDIRECT_URIS = [
-  ...devRedirectUris([8849, 4173]),
+  ...devRedirectUris([8089, 4173]),
   ...nginxRedirectUris(['flow.pinshuai.local']),
 ];
 

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+﻿import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -72,25 +72,106 @@ export class OidcService implements IOidcInteraction {
     );
   }
 
+  /**
+   * node-oidc-provider 构造时的 canonical issuer。
+   * nginx/production 或 IAM_LOGIN_URL 已是 auth 域时，纠正 .env 残留的 localhost。
+   */
+  private resolveConfiguredIssuer(): string {
+    let issuer = this.config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
+    const loginUrl = this.config.getOrThrow<AppConfig>('app').iamLoginUrl;
+    const nodeEnv = process.env.NODE_ENV;
+
+    const authIssuerFromLogin = (): string | null => {
+      if (!loginUrl?.includes('.pinshuai.local')) {
+        return null;
+      }
+      try {
+        return `${new URL(loginUrl).origin}/oidc`;
+      } catch {
+        return 'http://auth.pinshuai.local/oidc';
+      }
+    };
+
+    if (nodeEnv === 'nginx' || nodeEnv === 'production') {
+      if (!issuer.includes('.pinshuai.local')) {
+        issuer = authIssuerFromLogin() ?? 'http://auth.pinshuai.local/oidc';
+      }
+      return issuer;
+    }
+
+    if (issuer.includes('localhost') && loginUrl?.includes('.pinshuai.local')) {
+      issuer = authIssuerFromLogin() ?? issuer;
+    }
+
+    return issuer;
+  }
+
+  /** Provider 重建条件：oauth_client、issuer、登录页地址任一变化 */
+  private buildProviderSnapshot(clientsSnapshot: string): string {
+    const issuer = this.resolveConfiguredIssuer();
+    const loginUrl = this.config.getOrThrow<AppConfig>('app').iamLoginUrl ?? '';
+    return JSON.stringify({ clientsSnapshot, issuer, loginUrl });
+  }
+
+  private resolveIdpOrigin(issuer: string, appUrl: string): string {
+    try {
+      return new URL(issuer).origin;
+    } catch {
+      return appUrl.replace(/\/$/, '');
+    }
+  }
+
+  /** nginx 子域：client redirect_uri 为 *.pinshuai.local 时纠正 localhost 配置 */
+  private resolvePublicOidcEndpoints(
+    redirectUri: string | undefined,
+  ): { issuer: string; loginUrl: string | null; idpOrigin: string } {
+    const cfg = this.config.getOrThrow<AppConfig>('app');
+    let issuer = this.resolveConfiguredIssuer();
+    let loginUrl = cfg.iamLoginUrl;
+
+    let redirectHost: string | null = null;
+    if (redirectUri) {
+      try {
+        redirectHost = new URL(redirectUri).hostname.toLowerCase();
+      } catch {
+        redirectHost = null;
+      }
+    }
+
+    if (redirectHost?.endsWith('.pinshuai.local')) {
+      if (!issuer.includes('.pinshuai.local')) {
+        issuer = 'http://auth.pinshuai.local/oidc';
+      }
+      if (!loginUrl || loginUrl.includes('localhost')) {
+        loginUrl = 'http://auth.pinshuai.local';
+      }
+    }
+
+    return {
+      issuer,
+      loginUrl,
+      idpOrigin: this.resolveIdpOrigin(issuer, cfg.url),
+    };
+  }
+
   async getProvider(): Promise<OidcProvider> {
-    const snapshot = await this.buildClientsSnapshot();
+    const clientsSnapshot = await this.buildClientsSnapshot();
+    const snapshot = this.buildProviderSnapshot(clientsSnapshot);
     if (this.provider && this.clientsSnapshot === snapshot) {
       return this.provider;
     }
 
     if (this.provider) {
-      this.logger.log('检测到 oauth_client 变更，重新加载 node-oidc-provider');
+      this.logger.log('检测到 OIDC 配置变更，重新加载 node-oidc-provider');
       this.callbackFn = null;
     }
 
-    const issuer = this.config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
+    const issuer = this.resolveConfiguredIssuer();
     const cookieKeys = (this.config.get<string>('OIDC_COOKIE_KEYS') ?? 'dev-key-1,dev-key-2').split(
       ',',
     );
     const appCfg = this.config.getOrThrow<AppConfig>('app');
     const prefix = appCfg.globalPrefix;
-    const iamLoginUrl = appCfg.iamLoginUrl;
-    const iamApiBase = appCfg.url.replace(/\/$/, '');
     const clients = await this.oauthClientService.toOidcClients();
     const sessionTtlRaw = this.config.get<string>('OIDC_SESSION_TTL_SECONDS');
     const sessionTtlSeconds = sessionTtlRaw ? parseInt(sessionTtlRaw, 10) : 14 * 24 * 60 * 60;
@@ -139,7 +220,7 @@ export class OidcService implements IOidcInteraction {
       cookies: { keys: cookieKeys },
       /**
        * 默认 scopes 不含 offline_access 时，oidc-provider 会把 authorization code 绑定到 SSO Session。
-       * 多 SPA（8848/8849）并行授权时 Session 可能被新登录替换，导致 code 换 token 报 invalid_grant。
+       * 多 SPA（8088/8089）并行授权时 Session 可能被新登录替换，导致 code 换 token 报 invalid_grant。
        * 演示环境关闭该绑定，code 仍受 PKCE + 短 TTL 保护。
        */
       expiresWithSession: async () => false,
@@ -153,6 +234,7 @@ export class OidcService implements IOidcInteraction {
         AuthorizationCode: 300,
       },
       interactions: {
+        // 每次跳转实时读配置，避免 Provider 缓存后仍用 localhost:4180
         url: (
           _ctx: unknown,
           interaction: {
@@ -161,15 +243,17 @@ export class OidcService implements IOidcInteraction {
             prompt?: { name?: string };
           },
         ) => {
-          if (!iamLoginUrl) {
+          const redirectUri = interaction.params?.redirect_uri as string | undefined;
+          const { loginUrl: loginUrlBase, idpOrigin: idpOriginNow } =
+            this.resolvePublicOidcEndpoints(redirectUri);
+
+          if (!loginUrlBase) {
             return `/${prefix}/interaction/${interaction.uid}`;
           }
-          // consent 必须先走 IAM 同源 /interaction，浏览器才能带上 _interaction cookie，
-          // 再由 InteractionController 302 到 consent.html；直连 4180 跨域 fetch 读不到 cookie。
           if (interaction.prompt?.name === 'consent') {
-            return `${iamApiBase}/${prefix}/interaction/${interaction.uid}`;
+            return `${idpOriginNow}/${prefix}/interaction/${interaction.uid}`;
           }
-          const loginUrl = new URL(iamLoginUrl);
+          const loginUrl = new URL(loginUrlBase);
           loginUrl.searchParams.set('uid', interaction.uid);
           const clientId = interaction.params?.client_id;
           if (typeof clientId === 'string' && clientId.length > 0) {
@@ -326,23 +410,18 @@ export class OidcService implements IOidcInteraction {
 
   private setSsoLogoutEventCookie(res: Response, req: Request | undefined, clientId: string): void {
     const value = `${Date.now()}:${clientId}`;
-    const host = req?.headers?.host?.split(':')[0] ?? '';
+    // Path=/oidc：仅 IdP 域可读；本地登出不写此 cookie，避免误伤其它客户端
     const cookieOpts = {
       maxAge: 60_000,
-      // Path 限定在 /oidc，避免 localhost 多端口共享 host 时被其它 SPA 误读
       path: '/oidc',
       sameSite: 'lax' as const,
       httpOnly: false,
-      ...(host.endsWith('pinshuai.local') ? { domain: '.pinshuai.local' } : {}),
     };
     if (typeof res.cookie === 'function') {
       res.cookie('iam_sso_logout_event', value, cookieOpts);
       return;
     }
-    let header = `iam_sso_logout_event=${encodeURIComponent(value)}; Max-Age=60; Path=/oidc; SameSite=Lax`;
-    if (host.endsWith('pinshuai.local')) {
-      header += '; Domain=.pinshuai.local';
-    }
+    const header = `iam_sso_logout_event=${encodeURIComponent(value)}; Max-Age=60; Path=/oidc; SameSite=Lax`;
     res.setHeader('Set-Cookie', header);
   }
 
@@ -450,6 +529,112 @@ export class OidcService implements IOidcInteraction {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 在请求头写入带 Keygrip 签名的 `_interaction` / `_interaction.sig`，
+   * 让 provider.interactionDetails 读到 path uid（localhost 多 Tab 防串号）。
+   * 同时 Set-Cookie 写回浏览器，避免被其它 Tab 的旧 cookie 长期占用。
+   */
+  async pinInteractionCookie(req: unknown, res: unknown, uid: string): Promise<void> {
+    if (!uid) {
+      return;
+    }
+    const provider = await this.getProvider();
+    const providerAny = provider as unknown as {
+      cookieName: (type: string) => string;
+      app: {
+        createContext: (
+          req: unknown,
+          res: unknown,
+        ) => {
+          cookies: {
+            keys?: { sign: (data: string) => string };
+            set: (name: string, value: string | null, opts?: Record<string, unknown>) => void;
+          };
+        };
+      };
+    };
+    const name = providerAny.cookieName('interaction');
+    const sigName = `${name}.sig`;
+    const request = req as {
+      headers: { cookie?: string };
+      cookies?: Record<string, string>;
+    };
+
+    const ctx = providerAny.app.createContext(req, res);
+    const keys = ctx.cookies.keys;
+    if (!keys?.sign) {
+      this.logger.warn('pinInteractionCookie: OIDC cookie keys 未配置，无法签名');
+      return;
+    }
+
+    const data = `${name}=${uid}`;
+    const sig = keys.sign(data);
+
+    const raw = request.headers.cookie ?? '';
+    const kept = raw
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .filter((part) => !part.startsWith(`${name}=`) && !part.startsWith(`${sigName}=`));
+    kept.push(`${name}=${uid}`);
+    kept.push(`${sigName}=${sig}`);
+    request.headers.cookie = kept.join('; ');
+
+    if (request.cookies && typeof request.cookies === 'object') {
+      request.cookies[name] = uid;
+      request.cookies[sigName] = sig;
+    }
+
+    try {
+      ctx.cookies.set(name, uid, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        signed: true,
+      });
+    } catch (err) {
+      this.logger.warn(`pinInteractionCookie Set-Cookie 失败: ${String(err)}`);
+    }
+  }
+
+  async getDetailsByUid(
+    req: unknown,
+    res: unknown,
+    uid: string,
+  ): Promise<OidcInteractionDetails> {
+    const provider = await this.getProvider();
+    const interaction = await provider.Interaction.find(uid);
+    if (!interaction) {
+      throw Object.assign(new Error('interaction session not found'), {
+        error: 'interaction_expired',
+      });
+    }
+
+    // 一键清会话后：Interaction 可能仍在，但引用的 SSO Session 已删。
+    // 登录交互应允许继续（用户重新输账密）；剥离陈旧 session 引用。
+    const sessionUid = (interaction as { session?: { uid?: string }; exp?: number }).session?.uid;
+    if (sessionUid) {
+      const session = await provider.Session.findByUid(sessionUid);
+      if (!session) {
+        const row = interaction as {
+          session?: unknown;
+          exp?: number;
+          save: (ttl: number) => Promise<unknown>;
+        };
+        delete row.session;
+        const nowSec = Math.floor(Date.now() / 1000);
+        const ttl = Math.max(60, (row.exp ?? nowSec + 600) - nowSec);
+        await row.save(ttl);
+      }
+    }
+
+    await this.pinInteractionCookie(req, res, uid);
+    return provider.interactionDetails(
+      req as never,
+      res as never,
+    ) as unknown as OidcInteractionDetails;
   }
 
   async finishLogin(req: unknown, res: unknown, result: OidcLoginResult): Promise<void> {

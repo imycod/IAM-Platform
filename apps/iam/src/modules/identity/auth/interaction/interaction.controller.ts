@@ -90,21 +90,6 @@ const OIDC_AUTH_PARAM_KEYS = [
   'login_hint',
 ] as const;
 
-const DEFAULT_APP_RETURN_URLS: Record<string, Record<string, string>> = {
-  nginx: {
-    'iam-admin-spa': 'http://admin.pinshuai.local/',
-    'flow-admin-spa': 'http://flow.pinshuai.local/',
-  },
-  local: {
-    'iam-admin-spa': 'http://localhost:8848/',
-    'flow-admin-spa': 'http://localhost:8849/',
-  },
-};
-
-function resolveDefaultAppReturnUrls(issuer: string): Record<string, string> {
-  return issuer.includes('iam.local') ? DEFAULT_APP_RETURN_URLS.nginx : DEFAULT_APP_RETURN_URLS.local;
-}
-
 function pickOidcAuthParams(params: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const key of OIDC_AUTH_PARAM_KEYS) {
@@ -128,21 +113,23 @@ function buildRestartAuthUrl(issuer: string, params: Record<string, unknown>): s
   return url.toString();
 }
 
-/** 按 redirect_uri 推断 issuer / 回跳地址，避免 nginx 访问时仍返回 localhost。 */
-function resolveOidcIssuerForParams(baseIssuer: string, params: Record<string, unknown>): string {
-  const redirectUri = params.redirect_uri as string | undefined;
-  if (redirectUri?.includes('.pinshuai.local')) {
-    return 'http://api.pinshuai.local/oidc';
-  }
-  return baseIssuer;
-}
-
 function resolveAppReturnUrlFromRedirectUri(redirectUri: string | undefined): string | null {
   if (!redirectUri) {
     return null;
   }
   try {
     return `${new URL(redirectUri).origin}/`;
+  } catch {
+    return null;
+  }
+}
+
+function hostnameFromUri(uri: string | undefined): string | null {
+  if (!uri) {
+    return null;
+  }
+  try {
+    return new URL(uri).hostname.toLowerCase();
   } catch {
     return null;
   }
@@ -220,15 +207,81 @@ export class InteractionController {
   }
 
   private getOidcIssuer(): string {
-    return this.config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
+    const configured = this.config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc';
+    const loginUrl = this.getIamLoginUrl();
+    if (configured.includes('localhost') && loginUrl?.includes('.pinshuai.local')) {
+      try {
+        return `${new URL(loginUrl).origin}/oidc`;
+      } catch {
+        return 'http://auth.pinshuai.local/oidc';
+      }
+    }
+    if (
+      (process.env.NODE_ENV === 'nginx' || process.env.NODE_ENV === 'production') &&
+      !configured.includes('.pinshuai.local')
+    ) {
+      return 'http://auth.pinshuai.local/oidc';
+    }
+    return configured;
+  }
+
+  /**
+   * 生成 restartAuthUrl 等对外链接用的 issuer。
+   * nginx/子域场景下即使 .env 仍残留 localhost，也按 redirect_uri / 请求 Host 纠正为 auth 域。
+   */
+  private resolveOidcIssuer(
+    req: Request,
+    params?: Record<string, unknown>,
+  ): string {
+    const configured = this.getOidcIssuer();
+    const redirectUri = params?.redirect_uri as string | undefined;
+    const redirectHost = hostnameFromUri(redirectUri);
+    const requestHost = (req.hostname ?? '').toLowerCase();
+    const loginUrl = this.getIamLoginUrl();
+
+    const isSubdomainDeploy =
+      redirectHost?.endsWith('.pinshuai.local') ||
+      requestHost.endsWith('.pinshuai.local');
+
+    if (isSubdomainDeploy) {
+      if (configured.includes('.pinshuai.local')) {
+        return configured;
+      }
+      if (loginUrl?.includes('.pinshuai.local')) {
+        try {
+          return `${new URL(loginUrl).origin}/oidc`;
+        } catch {
+          // ignore
+        }
+      }
+      if (requestHost === 'auth.pinshuai.local' || requestHost.startsWith('auth.')) {
+        return `http://${requestHost}/oidc`;
+      }
+      return 'http://auth.pinshuai.local/oidc';
+    }
+
+    return configured;
   }
 
   private resolveAppReturnUrl(clientId: string | undefined): string | null {
     if (!clientId) {
       return null;
     }
-    const map = resolveDefaultAppReturnUrls(this.getOidcIssuer());
+    const map = this.config.getOrThrow<AppConfig>('app').appReturnUrls;
     return map[clientId] ?? null;
+  }
+
+  /** consent deny / 会话失效：优先 redirect_uri 同源，其次 APP_RETURN_URLS */
+  private resolveClientLoginUrl(
+    clientId: string | undefined,
+    redirectUri: string | undefined,
+  ): string | null {
+    const origin =
+      resolveAppReturnUrlFromRedirectUri(redirectUri) ?? this.resolveAppReturnUrl(clientId);
+    if (!origin) {
+      return null;
+    }
+    return `${origin.replace(/\/$/, '')}/#/login`;
   }
 
   private isInvalidInteractionError(err: unknown): boolean {
@@ -242,65 +295,38 @@ export class InteractionController {
     );
   }
 
-  /** 登录成功后写入跨子域 cookie，供 login.pinshuai.local 其它 Tab 感知。 */
+  /**
+   * 登录成功后写入 cookie，供 auth 域其它登录 Tab 感知。
+   * IdP 已统一到 auth.* 同源后，无需再跨子域广播；仅同 host 即可。
+   */
   private broadcastSsoLoginEvent(req: Request, res: Response, clientId?: string): void {
-    const host = req.hostname;
     const value = clientId ? `${Date.now()}:${clientId}` : String(Date.now());
-    const opts: {
-      maxAge: number;
-      path: string;
-      sameSite: 'lax';
-      httpOnly: boolean;
-      domain?: string;
-    } = {
+    res.cookie('iam_sso_login_event', value, {
       maxAge: 60_000,
       path: '/',
       sameSite: 'lax',
       httpOnly: false,
-    };
-    if (host.endsWith('pinshuai.local')) {
-      opts.domain = '.pinshuai.local';
-    }
-    res.cookie('iam_sso_login_event', value, opts);
+    });
   }
 
   /**
-   * 仅本地开发（localhost / 127.0.0.1）下需要按 path uid 锁定 interaction。
-   *
-   * 本地多个 SPA 走同一 localhost 主机（仅端口不同），而 Cookie 不区分端口，
-   * _interaction 变成单例 cookie，多 Tab 会互相覆盖。线上按子域部署时，各应用
-   * 与 IdP 的 Cookie 作用域天然隔离，直接沿用浏览器 _interaction cookie 即可。
+   * 登录域（iam-login / auth.*）上 _interaction 是单例 cookie。
+   * 多 client 同时 SSO 时必须按 URL path uid 锁定，否则会串到其它 client。
+   * localhost 开发同理（多端口共享 cookie）。
    */
-  private shouldPinInteractionToUid(req: Request): boolean {
+  private shouldPinInteractionByPathUid(req: Request): boolean {
     const host = (req.hostname ?? '').toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
-  }
-
-  /**
-   * 强制让 provider 使用 URL path 里的 uid（而非浏览器共享的 _interaction cookie）。
-   *
-   * 浏览器同一域下 _interaction 是单例 cookie（未签名、path=/），多个应用同时在 4180
-   * 打开登录页时会互相覆盖：最后发起 /oidc/auth 的应用（如 flow）占用 cookie。
-   * 此时另一应用（iam）提交登录，provider 读到的却是 flow 的 interaction，导致 mismatch
-   * 并被回跳成 flow 的 client_id。这里按 path uid 覆写请求 cookie，使登录/授权始终作用于
-   * 本 Tab 真正的 interaction，彻底避免双 Tab 串号。仅本地开发启用。
-   */
-  private forceInteractionCookie(req: Request, uid: string): void {
-    if (!uid || !this.shouldPinInteractionToUid(req)) {
-      return;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
+      return true;
     }
-    const name = '_interaction';
-    const raw = req.headers.cookie ?? '';
-    const kept = raw
-      .split(';')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .filter((part) => !part.startsWith(`${name}=`));
-    kept.push(`${name}=${uid}`);
-    req.headers.cookie = kept.join('; ');
-    const parsed = (req as Request & { cookies?: Record<string, string> }).cookies;
-    if (parsed && typeof parsed === 'object') {
-      parsed[name] = uid;
+    const loginUrl = this.getIamLoginUrl();
+    if (!loginUrl) {
+      return false;
+    }
+    try {
+      return new URL(loginUrl).hostname.toLowerCase() === host;
+    } catch {
+      return false;
     }
   }
 
@@ -326,12 +352,35 @@ export class InteractionController {
     }
   }
 
+  /** 按 path uid 读取（登录域上 pin 签名 cookie，多 client 不串）。 */
+  private async readDetailsForUid(req: Request, res: Response, uid: string) {
+    const oidc = this.ensureOidc();
+    try {
+      if (this.shouldPinInteractionByPathUid(req)) {
+        const details = await oidc.getDetailsByUid(req, res, uid);
+        this.assertInteractionUid(details, uid);
+        return details;
+      }
+      const details = await oidc.getDetails(req, res);
+      this.assertInteractionUid(details, uid);
+      return details;
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        throw err;
+      }
+      if (this.isInvalidInteractionError(err)) {
+        throw new NotFoundException({ code: 'interaction_expired' });
+      }
+      throw err;
+    }
+  }
+
   private async buildMetaPayload(req: Request, res: Response, details: { uid: string; prompt?: { name: string }; params: Record<string, unknown> }) {
     const oidc = this.ensureOidc();
     const clientId = details.params.client_id as string | undefined;
     const redirectUri = details.params.redirect_uri as string | undefined;
     const sessionAccountId = await oidc.getSessionAccountId(req, res);
-    const issuer = resolveOidcIssuerForParams(this.getOidcIssuer(), details.params);
+    const issuer = this.resolveOidcIssuer(req, details.params);
     return {
       uid: details.uid,
       clientId: clientId ?? null,
@@ -340,6 +389,7 @@ export class InteractionController {
       restartAuthUrl: buildRestartAuthUrl(issuer, details.params),
       appReturnUrl:
         resolveAppReturnUrlFromRedirectUri(redirectUri) ?? this.resolveAppReturnUrl(clientId),
+      appLoginUrl: this.resolveClientLoginUrl(clientId, redirectUri),
       hasSession: !!sessionAccountId,
     };
   }
@@ -348,10 +398,29 @@ export class InteractionController {
    * 读取当前 _interaction cookie 对应的 meta（不依赖 URL uid）。
    * login 页用于纠正 URL ?uid= 与 cookie 不一致的 stale tab。
    */
+  /**
+   * 读取当前 _interaction cookie 对应的 meta。
+   * 无 cookie 时返回 active:false（非 404），避免多 client 场景误报错误。
+   */
   @Get('active/meta')
   async activeMeta(@Req() req: Request, @Res() res: Response) {
-    const details = await this.readInteractionDetails(req, res);
-    res.json(await this.buildMetaPayload(req, res, details));
+    try {
+      const details = await this.readInteractionDetails(req, res);
+      res.json(await this.buildMetaPayload(req, res, details));
+    } catch (err) {
+      if (
+        err instanceof NotFoundException &&
+        (err.getResponse() as { code?: string })?.code === 'interaction_expired'
+      ) {
+        res.json({ active: false, uid: null, clientId: null, hasSession: false });
+        return;
+      }
+      if (this.isInvalidInteractionError(err)) {
+        res.json({ active: false, uid: null, clientId: null, hasSession: false });
+        return;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -364,16 +433,17 @@ export class InteractionController {
     if (!details) {
       throw new NotFoundException({ code: 'interaction_expired' });
     }
+    // 顺带 pin 签名 cookie，方便本 Tab 后续 login POST（多 client 不串）
+    if (this.shouldPinInteractionByPathUid(req)) {
+      await this.ensureOidc().pinInteractionCookie(req, res, uid);
+    }
     res.json(await this.buildMetaPayload(req, res, details));
   }
 
   /** iam-login 拉取 interaction 元数据，用于跨 Tab 重启授权链路。 */
   @Get(':uid/meta')
   async meta(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
-    // 按 path uid 锁定，避免双 Tab 共享 _interaction cookie 时读到其它应用的 interaction
-    this.forceInteractionCookie(req, uid);
-    const details = await this.readInteractionDetails(req, res);
-    this.assertInteractionUid(details, uid);
+    const details = await this.readDetailsForUid(req, res, uid);
     res.json(await this.buildMetaPayload(req, res, details));
   }
 
@@ -407,26 +477,33 @@ export class InteractionController {
   @Get(':uid')
   async details(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const oidc = this.ensureOidc();
-    this.forceInteractionCookie(req, uid);
     let details;
     try {
-      details = await oidc.getDetails(req, res);
+      details = await this.readDetailsForUid(req, res, uid);
     } catch (err) {
+      if (this.getIamLoginUrl() && err instanceof NotFoundException) {
+        const code = (err.getResponse() as { code?: string })?.code;
+        if (code === 'interaction_expired') {
+          this.redirectToLoginPage(res, uid, 'interaction_expired', req.query.client_id as string | undefined);
+          return;
+        }
+        if (code === 'interaction_mismatch') {
+          // 尽量读 cookie 上的 active interaction 做纠偏
+          try {
+            const active = await oidc.getDetails(req, res);
+            this.handleInteractionUidMismatch(res, req, uid, active);
+            return;
+          } catch {
+            this.redirectToLoginPage(res, uid, 'interaction_mismatch', req.query.client_id as string | undefined);
+            return;
+          }
+        }
+      }
       if (this.getIamLoginUrl() && this.isInvalidInteractionError(err)) {
-        this.redirectToLoginPage(res, uid, 'interaction_expired');
+        this.redirectToLoginPage(res, uid, 'interaction_expired', req.query.client_id as string | undefined);
         return;
       }
       throw err;
-    }
-
-    try {
-      this.assertInteractionUid(details, uid);
-    } catch (mismatch) {
-      if (this.getIamLoginUrl()) {
-        this.handleInteractionUidMismatch(res, req, uid, details);
-        return;
-      }
-      throw mismatch;
     }
 
     // consentMode=never 时自动完成授权；否则展示授权确认页
@@ -504,26 +581,23 @@ export class InteractionController {
     }
 
     const oidc = this.ensureOidc();
-    // 双 Tab 共享 _interaction cookie 时，按 path uid 锁定本 Tab 的 interaction
-    this.forceInteractionCookie(req, uid);
     let details;
 
     try {
-      details = await oidc.getDetails(req, res);
-      this.assertInteractionUid(details, uid);
+      details = await this.readDetailsForUid(req, res, uid);
     } catch (err) {
       if (this.getIamLoginUrl() && this.isInvalidInteractionError(err)) {
-        this.redirectToLoginPage(res, uid, 'interaction_expired');
+        this.redirectToLoginPage(res, uid, 'interaction_expired', req.query.client_id as string | undefined);
         return;
       }
-      if (
-        this.getIamLoginUrl() &&
-        err instanceof NotFoundException &&
-        typeof (err.getResponse() as { code?: string })?.code === 'string' &&
-        (err.getResponse() as { code: string }).code === 'interaction_mismatch' &&
-        details
-      ) {
-        this.handleInteractionUidMismatch(res, req, uid, details);
+      if (this.getIamLoginUrl() && err instanceof NotFoundException) {
+        const code = (err.getResponse() as { code?: string })?.code;
+        this.redirectToLoginPage(
+          res,
+          uid,
+          code === 'interaction_mismatch' ? 'interaction_mismatch' : 'interaction_expired',
+          req.body?.client_id as string | undefined,
+        );
         return;
       }
       throw err;
@@ -540,7 +614,7 @@ export class InteractionController {
       await oidc.finishLogin(req, res, { accountId: user.id, remember: true });
     } catch (err) {
       if (this.getIamLoginUrl() && this.isInvalidInteractionError(err)) {
-        this.redirectToLoginPage(res, uid, 'interaction_expired');
+        this.redirectToLoginPage(res, uid, 'interaction_expired', loginClientId);
         return;
       }
       if (this.getIamLoginUrl()) {
@@ -554,17 +628,18 @@ export class InteractionController {
   @Post(':uid/consent')
   async consent(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const oidc = this.ensureOidc();
-    this.forceInteractionCookie(req, uid);
     let details;
 
     try {
-      details = await oidc.getDetails(req, res);
-      this.assertInteractionUid(details, uid);
+      details = await this.readDetailsForUid(req, res, uid);
     } catch (err) {
       if (this.getIamLoginUrl() && this.isInvalidInteractionError(err)) {
-        const clientId =
-          (details?.params?.client_id as string | undefined) ||
-          (req.body?.client_id as string | undefined);
+        const clientId = req.body?.client_id as string | undefined;
+        this.redirectToConsentPage(res, uid, clientId, undefined, 'interaction_expired');
+        return;
+      }
+      if (this.getIamLoginUrl() && err instanceof NotFoundException) {
+        const clientId = req.body?.client_id as string | undefined;
         this.redirectToConsentPage(res, uid, clientId, undefined, 'interaction_expired');
         return;
       }
@@ -576,7 +651,6 @@ export class InteractionController {
     }
 
     const action = String(req.body?.action ?? 'approve').trim();
-    const clientId = details.params?.client_id as string | undefined;
     if (action === 'deny') {
       await oidc.abort(req, res, 'access_denied', '用户拒绝授权');
       return;

@@ -32,6 +32,18 @@ export interface IOidcInteraction {
   /** 按 uid 读取仍存活的 interaction（不依赖 _interaction cookie）。 */
   findInteractionByUid(uid: string): Promise<OidcInteractionDetails | null>;
 
+  /**
+   * localhost 多 Tab：把请求上的 `_interaction` 锁定为指定 uid（含签名）。
+   * oidc-provider 读的是带 `.sig` 的签名 cookie，裸写 uid 会导致 interaction_expired。
+   */
+  pinInteractionCookie(req: unknown, res: unknown, uid: string): Promise<void>;
+
+  /**
+   * 按 path uid 读取详情：先 pin 签名 cookie，再 interactionDetails。
+   * 若 interaction 仍在但关联 SSO session 已被清掉，会剥离陈旧 session 引用后重试（登录页可继续）。
+   */
+  getDetailsByUid(req: unknown, res: unknown, uid: string): Promise<OidcInteractionDetails>;
+
   /** 完成登录交互，回到授权流程（对应 provider.interactionFinished）。 */
   finishLogin(req: unknown, res: unknown, result: OidcLoginResult): Promise<void>;
 

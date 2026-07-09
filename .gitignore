@@ -17,7 +17,6 @@ pnpm-debug.log*
 # editor / os
 .idea
 .DS_Store
-.vscode/*
 !.vscode/extensions.json
 
 # test

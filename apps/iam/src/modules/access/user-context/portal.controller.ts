@@ -101,6 +101,7 @@ export class PortalController {
   @Post('login')
   async login(@Body() dto: PortalLoginDto, @Req() req: Request) {
     const email = dto.email ?? dto.username;
+    debugger
     const app = await this.resolveApp(dto.appCode);
 
     const result = await this.authService.login(email, dto.password, {
@@ -150,4 +151,4 @@ export class PortalController {
     return { success: true, data: this.portalMenuService.toPureAdminRoutes(menus) };
   }
 }
-
+

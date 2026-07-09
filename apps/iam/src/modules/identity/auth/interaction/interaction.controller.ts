@@ -337,6 +337,7 @@ export class InteractionController {
   async login(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const email = String(req.body?.email ?? '').trim();
     const password = String(req.body?.password ?? '');
+    debugger
     if (!email || !password) {
       if (this.getIamLoginUrl()) {
         this.redirectToLoginPage(res, uid, 'missing_credentials');

@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "IAM: Debug (nginx)",
+      "port": 9229,
+      "address": "127.0.0.1",
+      "restart": true,
+      "sourceMaps": true,
+      "preLaunchTask": "iam: start debug (nginx)",
+      "cwd": "${workspaceFolder}",
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "IAM: Debug (development)",
+      "port": 9229,
+      "address": "127.0.0.1",
+      "restart": true,
+      "sourceMaps": true,
+      "preLaunchTask": "iam: start debug (development)",
+      "cwd": "${workspaceFolder}",
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "IAM: Attach (9229)",
+      "port": 9229,
+      "address": "127.0.0.1",
+      "restart": true,
+      "sourceMaps": true,
+      "cwd": "${workspaceFolder}",
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

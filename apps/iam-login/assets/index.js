@@ -414,9 +414,10 @@ async function initOidcLoginPage() {
       !!loginErrorCode && IamLoginSsoSync.isInvalidInteractionError(loginErrorCode);
     await IamLoginSsoSync.initSsoSync(interactionUid, { forceExpired });
     const meta = IamLoginSsoSync.getInteractionMeta();
+    const resolvedUid = IamLoginSsoSync.getCurrentInteractionUid() || interactionUid;
     if (meta?.prompt === 'consent') {
       const consentUrl = new URL('consent.html', window.location.href);
-      consentUrl.searchParams.set('uid', interactionUid);
+      consentUrl.searchParams.set('uid', resolvedUid);
       if (meta.clientId) {
         consentUrl.searchParams.set('client_id', meta.clientId);
       }
@@ -438,9 +439,15 @@ async function initOidcLoginPage() {
 initOidcLoginPage();
 
 async function submitInteractionLogin(email, password) {
+  // 始终使用 URL/当前 uid 提交；后端会按 path uid 锁定 interaction，双 Tab 也不会串号。
+  const uid =
+    new URLSearchParams(window.location.search).get('uid') ||
+    (window.IamLoginSsoSync && IamLoginSsoSync.getCurrentInteractionUid()) ||
+    interactionUid;
+
   const form = document.createElement('form');
   form.method = 'POST';
-  form.action = `${iamLoginCfg.apiBaseUrl.replace(/\/$/, '')}/api/interaction/${encodeURIComponent(interactionUid)}/login`;
+  form.action = `${iamLoginCfg.apiBaseUrl.replace(/\/$/, '')}/api/interaction/${encodeURIComponent(uid)}/login`;
   form.style.display = 'none';
 
   const emailInputEl = document.createElement('input');

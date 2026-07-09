@@ -6,6 +6,7 @@ import {
   clearOidcRedirectLock,
   clearSkipAutoSso,
   getLoginRouteQuery,
+  shouldAutoSso,
   skipAutoSso,
   startOidcLogin,
   trySilentOidcLogin
@@ -16,8 +17,8 @@ import { isSsoSession } from "@/utils/login-session";
 export type SsoLoginPhase = "probing" | "entering" | "ready";
 
 /**
- * 默认账密登录；仅点击 SSO 才走 OIDC / login.pinshuai.local。
- * sso_interactive 回调、已有 SSO 本地会话时自动续登。
+ * Google 式 SSO：IdP 已有会话时自动 silent 续登（consent 由 consentMode 决定）；
+ * 本地退出后 skipAutoSso 阻止自动续登；手动点击 SSO 走交互式授权。
  */
 export function useSsoLoginPage(onEnterApp: () => void) {
   const phase = ref<SsoLoginPhase>("ready");
@@ -91,8 +92,6 @@ export function useSsoLoginPage(onEnterApp: () => void) {
   }
 
   onMounted(async () => {
-    skipAutoSso();
-
     document.addEventListener("visibilitychange", onTabVisible);
     window.addEventListener("focus", onTabVisible);
 
@@ -114,6 +113,21 @@ export function useSsoLoginPage(onEnterApp: () => void) {
       clearSkipAutoSso();
       await beginAuthorize(false);
       return;
+    }
+
+    if (shouldAutoSso()) {
+      phase.value = "probing";
+      statusText.value = "正在检测统一登录状态…";
+      ssoBusy.value = true;
+      const iamSession = await checkIamSsoSession();
+      if (iamSession) {
+        clearSkipAutoSso();
+        await beginAuthorize(true);
+        return;
+      }
+      resetSsoBusy();
+    } else {
+      skipAutoSso();
     }
 
     phase.value = "ready";

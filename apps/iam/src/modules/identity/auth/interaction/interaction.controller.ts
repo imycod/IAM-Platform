@@ -258,10 +258,50 @@ export class InteractionController {
       sameSite: 'lax',
       httpOnly: false,
     };
-    if (host.endsWith('iam.local')) {
+    if (host.endsWith('pinshuai.local')) {
       opts.domain = '.pinshuai.local';
     }
     res.cookie('iam_sso_login_event', value, opts);
+  }
+
+  /**
+   * 仅本地开发（localhost / 127.0.0.1）下需要按 path uid 锁定 interaction。
+   *
+   * 本地多个 SPA 走同一 localhost 主机（仅端口不同），而 Cookie 不区分端口，
+   * _interaction 变成单例 cookie，多 Tab 会互相覆盖。线上按子域部署时，各应用
+   * 与 IdP 的 Cookie 作用域天然隔离，直接沿用浏览器 _interaction cookie 即可。
+   */
+  private shouldPinInteractionToUid(req: Request): boolean {
+    const host = (req.hostname ?? '').toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  }
+
+  /**
+   * 强制让 provider 使用 URL path 里的 uid（而非浏览器共享的 _interaction cookie）。
+   *
+   * 浏览器同一域下 _interaction 是单例 cookie（未签名、path=/），多个应用同时在 4180
+   * 打开登录页时会互相覆盖：最后发起 /oidc/auth 的应用（如 flow）占用 cookie。
+   * 此时另一应用（iam）提交登录，provider 读到的却是 flow 的 interaction，导致 mismatch
+   * 并被回跳成 flow 的 client_id。这里按 path uid 覆写请求 cookie，使登录/授权始终作用于
+   * 本 Tab 真正的 interaction，彻底避免双 Tab 串号。仅本地开发启用。
+   */
+  private forceInteractionCookie(req: Request, uid: string): void {
+    if (!uid || !this.shouldPinInteractionToUid(req)) {
+      return;
+    }
+    const name = '_interaction';
+    const raw = req.headers.cookie ?? '';
+    const kept = raw
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .filter((part) => !part.startsWith(`${name}=`));
+    kept.push(`${name}=${uid}`);
+    req.headers.cookie = kept.join('; ');
+    const parsed = (req as Request & { cookies?: Record<string, string> }).cookies;
+    if (parsed && typeof parsed === 'object') {
+      parsed[name] = uid;
+    }
   }
 
   private assertInteractionUid(details: { uid: string }, uid: string): void {
@@ -314,9 +354,24 @@ export class InteractionController {
     res.json(await this.buildMetaPayload(req, res, details));
   }
 
+  /**
+   * 按 URL uid 读取 interaction 元数据（不依赖 _interaction cookie）。
+   * 双 Tab 跨 client 时 cookie 可能被其它应用占用，用此接口取本 Tab 的 restartAuthUrl。
+   */
+  @Get(':uid/snapshot-meta')
+  async snapshotMeta(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
+    const details = await this.ensureOidc().findInteractionByUid(uid);
+    if (!details) {
+      throw new NotFoundException({ code: 'interaction_expired' });
+    }
+    res.json(await this.buildMetaPayload(req, res, details));
+  }
+
   /** iam-login 拉取 interaction 元数据，用于跨 Tab 重启授权链路。 */
   @Get(':uid/meta')
   async meta(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
+    // 按 path uid 锁定，避免双 Tab 共享 _interaction cookie 时读到其它应用的 interaction
+    this.forceInteractionCookie(req, uid);
     const details = await this.readInteractionDetails(req, res);
     this.assertInteractionUid(details, uid);
     res.json(await this.buildMetaPayload(req, res, details));
@@ -352,6 +407,7 @@ export class InteractionController {
   @Get(':uid')
   async details(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const oidc = this.ensureOidc();
+    this.forceInteractionCookie(req, uid);
     let details;
     try {
       details = await oidc.getDetails(req, res);
@@ -407,6 +463,8 @@ export class InteractionController {
 
     // 已有 IAM SSO 会话：直接完成 login interaction，无需再跳 4180
     if (details.prompt?.name === 'login' && details.session?.accountId) {
+      const loginClientId = details.params?.client_id as string | undefined;
+      this.broadcastSsoLoginEvent(req, res, loginClientId);
       await oidc.finishLogin(req, res, {
         accountId: details.session.accountId,
         remember: true,
@@ -446,6 +504,8 @@ export class InteractionController {
     }
 
     const oidc = this.ensureOidc();
+    // 双 Tab 共享 _interaction cookie 时，按 path uid 锁定本 Tab 的 interaction
+    this.forceInteractionCookie(req, uid);
     let details;
 
     try {
@@ -494,6 +554,7 @@ export class InteractionController {
   @Post(':uid/consent')
   async consent(@Param('uid') uid: string, @Req() req: Request, @Res() res: Response) {
     const oidc = this.ensureOidc();
+    this.forceInteractionCookie(req, uid);
     let details;
 
     try {

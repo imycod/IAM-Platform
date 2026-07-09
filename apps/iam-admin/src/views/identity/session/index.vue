@@ -2,6 +2,7 @@
 import { PureTableBar } from "@/components/RePureTableBar";
 import {
   getSessionRegistry,
+  revokeAllSessionRegistry,
   revokeSessionRegistry,
   type UnifiedSessionItem,
   type UnifiedSessionKind
@@ -119,6 +120,45 @@ async function onSearch() {
   }
 }
 
+async function handleRevokeAll() {
+  const scopeParts: string[] = [];
+  if (filters.userId.trim()) {
+    scopeParts.push(`用户 ${filters.userId.trim()}`);
+  }
+  if (filters.kind) {
+    scopeParts.push(kindLabelMap[filters.kind]);
+  }
+  const scope =
+    scopeParts.length > 0
+      ? `将踢下线${scopeParts.join("、")}下的`
+      : "将踢下线系统中";
+  const countHint =
+    dataList.value.length > 0 ? `当前列表共 ${dataList.value.length} 条，` : "";
+  const ipHint = filters.ipAddress.trim()
+    ? "（IP 筛选仅影响列表展示，批量下线按用户 ID 与会话类型执行）"
+    : "";
+
+  try {
+    await ElMessageBox.confirm(
+      `${countHint}${scope}所有活跃会话与 OIDC 令牌。用户需重新登录才能继续访问各 SaaS 应用。${ipHint}`,
+      "一键全部下线",
+      { type: "warning", confirmButtonText: "全部下线", cancelButtonText: "取消" }
+    );
+    const res = await revokeAllSessionRegistry({
+      userId: filters.userId.trim() || undefined,
+      kind: filters.kind || undefined
+    });
+    message(`已下线 ${res.revoked} 条会话/令牌`, { type: "success" });
+    await onSearch();
+  } catch (error: any) {
+    if (error === "cancel" || error === "close") return;
+    message(
+      error?.response?.data?.message ?? error?.message ?? "操作失败，请稍后重试",
+      { type: "error" }
+    );
+  }
+}
+
 async function handleRevoke(row: UnifiedSessionItem) {
   const kindLabel = kindLabelMap[row.kind] ?? row.kind;
   try {
@@ -187,6 +227,11 @@ onMounted(onSearch);
     </el-form>
 
     <PureTableBar title="会话中心" :columns="columns" @refresh="onSearch">
+      <template #buttons>
+        <el-button type="danger" plain :loading="loading" @click="handleRevokeAll">
+          一键全部下线
+        </el-button>
+      </template>
       <template #default="{ size, dynamicColumns }">
         <pure-table
           ref="tableRef"

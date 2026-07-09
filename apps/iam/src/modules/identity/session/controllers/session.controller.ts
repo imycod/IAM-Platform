@@ -31,6 +31,13 @@ export class SessionController {
     return this.sessionRegistryService.findMany(query);
   }
 
+  /** 一键踢下线：吊销当前筛选条件下所有活跃会话/令牌 */
+  @Delete('registry/all')
+  @HttpCode(HttpStatus.OK)
+  revokeRegistryAll(@Query() query: QuerySessionRegistryDto) {
+    return this.sessionRegistryService.revokeAll(query);
+  }
+
   /** 踢下线：按 kind 吊销对应会话/令牌 */
   @Delete('registry/:kind/:id')
   @HttpCode(HttpStatus.NO_CONTENT)

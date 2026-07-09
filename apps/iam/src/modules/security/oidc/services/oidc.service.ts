@@ -439,6 +439,19 @@ export class OidcService implements IOidcInteraction {
     ) as unknown as OidcInteractionDetails;
   }
 
+  async findInteractionByUid(uid: string): Promise<OidcInteractionDetails | null> {
+    const provider = await this.getProvider();
+    try {
+      const interaction = await provider.Interaction.find(uid);
+      if (!interaction) {
+        return null;
+      }
+      return interaction as unknown as OidcInteractionDetails;
+    } catch {
+      return null;
+    }
+  }
+
   async finishLogin(req: unknown, res: unknown, result: OidcLoginResult): Promise<void> {
     const provider = await this.getProvider();
     const details = (await provider.interactionDetails(
@@ -488,6 +501,11 @@ export class OidcService implements IOidcInteraction {
     const clientId = details.params.client_id as string | undefined;
     if (!accountId || !clientId) {
       throw new Error('consent 交互缺少 accountId 或 clientId');
+    }
+
+    const oauthClient = await this.oauthClientService.findByClientId(clientId);
+    if (oauthClient?.applicationId) {
+      await this.applicationService.assertUserCanAccess(oauthClient.applicationId, accountId);
     }
 
     const grant = new provider.Grant({ accountId, clientId });

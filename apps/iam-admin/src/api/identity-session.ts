@@ -58,6 +58,16 @@ export const getSessionRegistry = (params?: {
 export const revokeSessionRegistry = (kind: UnifiedSessionKind, id: string) =>
   http.request<unknown>("delete", `/api/sessions/registry/${kind}/${id}`);
 
+export const revokeAllSessionRegistry = (params?: {
+  userId?: string;
+  kind?: UnifiedSessionKind;
+}) =>
+  http
+    .request<{ revoked: number }>("delete", "/api/sessions/registry/all", {
+      params
+    })
+    .then(body => unwrapIamPayload<{ revoked: number }>(body));
+
 export const getSessions = (params?: { page?: number; pageSize?: number; userId?: string }) =>
   http.get<unknown>("/api/sessions", { params }).then(body => unwrapIamPayload<Paginated<SessionItem>>(body));
 

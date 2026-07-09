@@ -141,6 +141,55 @@ export class SessionRegistryService {
     }
   }
 
+  /** 批量踢下线（支持按 userId / kind 筛选，默认当前列表范围内全部） */
+  async revokeAll(query: QuerySessionRegistryParams): Promise<{ revoked: number }> {
+    const { items } = await this.findMany({
+      ...query,
+      page: 1,
+      pageSize: 5000,
+    });
+
+    let revoked = 0;
+
+    for (const item of items) {
+      if (item.kind !== UnifiedSessionKind.OIDC_SSO) {
+        continue;
+      }
+      try {
+        await this.revoke(item.kind, item.id);
+        revoked += 1;
+      } catch {
+        // 可能已被其它 SSO 会话连带吊销
+      }
+    }
+
+    for (const item of items) {
+      if (item.kind !== UnifiedSessionKind.PORTAL_PASSWORD) {
+        continue;
+      }
+      try {
+        await this.revoke(item.kind, item.id);
+        revoked += 1;
+      } catch {
+        // ignore
+      }
+    }
+
+    for (const item of items) {
+      if (item.kind !== UnifiedSessionKind.OIDC_ACCESS_TOKEN) {
+        continue;
+      }
+      try {
+        await this.revoke(item.kind, item.id);
+        revoked += 1;
+      } catch {
+        // ignore
+      }
+    }
+
+    return { revoked };
+  }
+
   private async enrichUserBriefs(items: UnifiedSessionItem[]): Promise<void> {
     const missingIds = [
       ...new Set(

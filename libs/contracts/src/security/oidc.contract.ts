@@ -29,6 +29,9 @@ export interface IOidcInteraction {
   /** 读取当前交互详情（对应 provider.interactionDetails）。 */
   getDetails(req: unknown, res: unknown): Promise<OidcInteractionDetails>;
 
+  /** 按 uid 读取仍存活的 interaction（不依赖 _interaction cookie）。 */
+  findInteractionByUid(uid: string): Promise<OidcInteractionDetails | null>;
+
   /** 完成登录交互，回到授权流程（对应 provider.interactionFinished）。 */
   finishLogin(req: unknown, res: unknown, result: OidcLoginResult): Promise<void>;
 

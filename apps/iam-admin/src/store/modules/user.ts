@@ -91,7 +91,7 @@ export const useUserStore = defineStore("pure-user", {
           });
       });
     },
-    /** 本地登出：仅清本应用 token（IdP 全局登出或其它 Tab 同步时调用） */
+    /** 本地登出：仅清本应用 token，保留 IdP SSO 会话 */
     async logOutLocal() {
       if (isSsoSession()) {
         await revokeCurrentOidcAccessToken();
@@ -108,15 +108,11 @@ export const useUserStore = defineStore("pure-user", {
       resetRouter();
       router.push("/login");
     },
-    /** IAM 管理后台：SSO 退出 = 全局登出（所有接入系统同步退出） */
+    /** 退出：仅清本应用，不销毁 IdP SSO 会话，不影响其它 SaaS */
     logOut() {
-      if (isSsoSession()) {
-        this.logOutGlobal();
-      } else {
-        this.logOutLocal();
-      }
+      void this.logOutLocal();
     },
-    /** 退出统一登录（销毁 IdP SSO 会话，并同步登出其它已接入应用） */
+    /** 退出统一登录（销毁 IdP SSO 会话；默认不使用，各应用独立退出） */
     logOutGlobal() {
       if (isSsoSession()) {
         performGlobalLogout();

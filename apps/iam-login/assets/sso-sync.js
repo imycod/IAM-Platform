@@ -24,6 +24,34 @@
   let lastLoginEventTs = 0;
   let lastLogoutEventTs = 0;
   let cookiePollTimer = null;
+  let initInProgress = false;
+
+  function readUrlClientId() {
+    return new URLSearchParams(global.location.search).get('client_id');
+  }
+
+  function readUrlUid() {
+    return new URLSearchParams(global.location.search).get('uid');
+  }
+
+  function isCrossClientInteraction(urlUid, activeMeta) {
+    if (!activeMeta || !activeMeta.uid || !urlUid) {
+      return false;
+    }
+    if (activeMeta.uid === urlUid) {
+      return false;
+    }
+    const urlClientId = readUrlClientId();
+    if (urlClientId && activeMeta.clientId) {
+      return urlClientId !== activeMeta.clientId;
+    }
+    const intendedClient = resolveIntendedClientId(urlUid);
+    if (intendedClient && activeMeta.clientId) {
+      return intendedClient !== activeMeta.clientId;
+    }
+    // cookie 有 uid 但缺少 clientId 时，保守视为跨应用冲突
+    return !!urlClientId;
+  }
 
   function getCfg() {
     return global.IAM_LOGIN_CONFIG || { apiBaseUrl: 'http://localhost:3000' };
@@ -272,22 +300,21 @@
 
     const resumeReasons = ['existing_session', 'session_probe', 'cross_tab', 'cookie'];
 
-    // cookie 与 uid 一致：直接 resume interaction
-    if (uid && metaOk && resumeReasons.indexOf(reason) >= 0) {
-      return interactionResumeUrl(uid);
-    }
-
-    // 跨应用 / cookie 不一致：用保存的 OIDC auth URL 重建链路（SSO 会话会跳过密码）
+    // 存在 SSO 会话时优先走保存的 /oidc/auth 链路：provider 会跳过密码，
+    // 按 consentMode 自动完成授权（never→直接登录）或跳转 consent.html。
+    // 直接 resume 旧 interaction 只会重渲染 login 页，无法利用新会话。
     if (resumeReasons.indexOf(reason) >= 0) {
-      const restartUrl = resolveRestartAuthUrl(uid);
+      const restartUrl =
+        resolveRestartAuthUrl(uid) ||
+        ctx?.restartAuthUrl ||
+        (interactionMeta?.restartAuthUrl && interactionMeta.uid === uid
+          ? interactionMeta.restartAuthUrl
+          : null);
       if (restartUrl) {
         return restartUrl;
       }
-      if (ctx?.restartAuthUrl) {
-        return ctx.restartAuthUrl;
-      }
-      if (interactionMeta?.restartAuthUrl && interactionMeta.uid === uid) {
-        return interactionMeta.restartAuthUrl;
+      if (uid && metaOk) {
+        return interactionResumeUrl(uid);
       }
     }
 
@@ -453,7 +480,9 @@
     stopCookiePolling();
     unlockLoginForm();
     if (kind === 'interaction_mismatch') {
-      showToast('当前登录会话已失效，请关闭此页并从应用重新点击 SSO 登录。');
+      showToast(
+        '另一个应用正在登录，请先关闭其它 4180 标签页，或从应用重新点击 SSO 登录。'
+      );
     } else {
       showToast('登录会话已失效，请关闭此页并从应用重新点击 SSO 登录。');
     }
@@ -497,15 +526,13 @@
       return;
     }
 
-    if (source === 'cookie' || source === 'broadcast' || source === 'storage') {
-      restartAuthChain(source === 'cookie' ? 'cookie' : 'cross_tab', currentUid);
+    // 无论哪个应用触发登录事件，都以“是否真有 SSO 会话”为准再续登，
+    // 避免误触发时把本 Tab 打回 login 页。
+    const hasSession = await checkIamSession();
+    if (!hasSession) {
       return;
     }
-
-    const hasSession = await checkIamSession();
-    if (hasSession) {
-      restartAuthChain('cross_tab', currentUid);
-    }
+    restartAuthChain(source === 'cookie' ? 'cookie' : 'cross_tab', currentUid);
   }
 
   function canResumeCurrentInteraction(uid) {
@@ -513,25 +540,9 @@
   }
 
   async function shouldRestartForSession(uid) {
-    const tabClient = getTabClientId(uid);
-    if (!tabClient) {
-      return true;
-    }
-    try {
-      const active = await fetchActiveMeta();
-      if (!active?.uid) {
-        return !!resolveRestartAuthUrl(uid);
-      }
-      if (active.clientId && active.clientId !== tabClient) {
-        return !!resolveRestartAuthUrl(uid);
-      }
-      if (active.uid !== uid) {
-        return !!resolveRestartAuthUrl(uid);
-      }
-      return true;
-    } catch {
-      return !!resolveRestartAuthUrl(uid);
-    }
+    // 只要拿得到本 Tab 自己 client 的 /oidc/auth 链路即可续登：
+    // 跳转后 provider 依据 SSO 会话跳过密码，并按 consentMode 决定直登或跳 consent。
+    return !!resolveRestartAuthUrl(uid);
   }
 
   function parseLoginEventCookie(raw) {
@@ -553,11 +564,8 @@
     if (parsed.ts < PAGE_LOAD_TS - LOGIN_EVENT_GRACE_MS) {
       return true;
     }
-    // 其它 client 在 4180 完成登录时，不要误触发本 Tab 的 resume（_interaction 同时只能有一个）
-    const tabClient = getTabClientId(currentUid);
-    if (parsed.clientId && tabClient && parsed.clientId !== tabClient) {
-      return true;
-    }
+    // 跨 client 也要响应：任一应用在 4180 完成登录即建立 IdP SSO 会话，
+    // 本 Tab 应据此静默续登（是否真有会话由 onLoginSuccessEvent 再确认）。
     return false;
   }
 
@@ -626,42 +634,18 @@
     return unwrapApiData(await res.json());
   }
 
-  /**
-   * URL uid 与 cookie uid 不一致：
-   * - 同应用：同步 URL
-   * - 跨应用：保留本 Tab uid，等待 SSO 登录事件后自动续登
-   */
-  async function syncUidWithActiveCookie(urlUid) {
-    let active;
-    try {
-      active = await fetchActiveMeta();
-    } catch {
-      return urlUid;
-    }
-    if (!active || !active.uid) {
-      return urlUid;
-    }
-    if (!urlUid || urlUid === active.uid) {
-      return active.uid;
-    }
-
-    const intendedClient = resolveIntendedClientId(urlUid);
-    if (intendedClient && active.clientId && intendedClient !== active.clientId) {
-      return urlUid;
-    }
-
-    if (!intendedClient || intendedClient === active.clientId) {
-      const next = new URL(global.location.href);
-      next.searchParams.set('uid', active.uid);
-      if (intendedClient || active.clientId) {
-        next.searchParams.set('client_id', intendedClient || active.clientId);
-      }
-      next.searchParams.delete('error');
-      global.location.replace(next.toString());
+  async function fetchSnapshotMeta(uid) {
+    const res = await fetch(
+      apiBase() + '/api/interaction/' + encodeURIComponent(uid) + '/snapshot-meta',
+      { credentials: 'include', cache: 'no-store' }
+    );
+    if (res.status === 404) {
       return null;
     }
-
-    return urlUid;
+    if (!res.ok) {
+      throw new Error('snapshot_meta_failed');
+    }
+    return unwrapApiData(await res.json());
   }
 
   async function fetchInteractionMeta(uid) {
@@ -720,7 +704,7 @@
   }
 
   async function probeSessionOnVisible() {
-    if (restarting || document.hidden || !currentUid) {
+    if (initInProgress || restarting || document.hidden || !currentUid) {
       return;
     }
 
@@ -750,99 +734,156 @@
     });
   }
 
-  function readUrlClientId() {
-    return new URLSearchParams(global.location.search).get('client_id');
+  async function restartFromSnapshot(uid) {
+    uid = uid || currentUid || readUrlUid();
+    if (!uid) {
+      return false;
+    }
+    try {
+      const snapshot = await fetchSnapshotMeta(uid);
+      if (snapshot?.restartAuthUrl) {
+        saveLoginCtx(uid, snapshot);
+        global.location.href = snapshot.restartAuthUrl;
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
   }
 
   async function initSsoSync(uid, options) {
+    initInProgress = true;
     setupCrossTabListeners();
     setupVisibilityProbe();
 
-    if (!uid) {
-      return null;
-    }
-
-    const urlClientId = readUrlClientId();
-    if (urlClientId) {
-      savePageIntent(uid, urlClientId);
-    }
-
-    const syncedUid = await syncUidWithActiveCookie(uid);
-    if (syncedUid === null) {
-      return null;
-    }
-    uid = syncedUid;
-    currentUid = uid;
-
-    const forceExpired = options && options.forceExpired;
-
     try {
-      interactionMeta = await fetchActiveMeta();
-      if (interactionMeta?.clientId && interactionMeta?.restartAuthUrl) {
-        saveClientLoginCtx(interactionMeta.clientId, interactionMeta);
+      if (!uid) {
+        return null;
       }
-      if (interactionMeta && interactionMeta.uid !== uid) {
-        const intendedClient = resolveIntendedClientId(uid);
-        if (
-          intendedClient &&
-          interactionMeta.clientId &&
-          intendedClient !== interactionMeta.clientId
-        ) {
-          interactionMeta = { expired: true, mismatch: true, uid: uid };
-        }
-      }
-      if (!interactionMeta || interactionMeta.uid !== uid) {
-        const fetched = await fetchInteractionMeta(uid);
-        if (fetched) {
-          interactionMeta = Object.assign({}, loadLoginCtx(uid), fetched);
-        }
-      }
-    } catch {
-      interactionMeta = loadLoginCtx(uid) ? { ...loadLoginCtx(uid), expired: true } : null;
-    }
 
-    saveLoginCtx(uid, interactionMeta || loadLoginCtx(uid) || { uid: uid, clientId: urlClientId });
-    if (interactionMeta?.clientId) {
-      savePageIntent(uid, interactionMeta.clientId);
-    }
+      const urlClientId = readUrlClientId();
+      if (urlClientId) {
+        savePageIntent(uid, urlClientId);
+      }
 
-    if (interactionMeta?.mismatch || interactionMeta?.expired) {
-      if (forceExpired) {
-        if (!(await tryAutoLoginWithSso(uid))) {
-          showInteractionBlocked(interactionMeta?.mismatch ? 'interaction_mismatch' : 'interaction_expired');
+      let activeMeta = null;
+      try {
+        activeMeta = await fetchActiveMeta();
+      } catch {
+        activeMeta = null;
+      }
+
+      if (activeMeta?.clientId && activeMeta?.restartAuthUrl && !isCrossClientInteraction(uid, activeMeta)) {
+        saveClientLoginCtx(activeMeta.clientId, activeMeta);
+      }
+
+      const syncedUid = await syncUidWithActiveCookieUsingActive(uid, activeMeta);
+      if (syncedUid === null) {
+        return null;
+      }
+      uid = syncedUid;
+      currentUid = uid;
+
+      if (urlClientId) {
+        savePageIntent(uid, urlClientId);
+      }
+
+      // 双 Tab 共享 _interaction cookie：后端 :uid/meta 已按 path uid 锁定，
+      // 这里只需按 uid 拉取本 Tab 真实 meta。
+      const crossClient = !!(activeMeta && isCrossClientInteraction(uid, activeMeta));
+
+      const forceExpired = options && options.forceExpired;
+
+      try {
+        if (activeMeta && activeMeta.uid === uid && !crossClient) {
+          interactionMeta = activeMeta;
+        } else {
+          const fetched = await fetchInteractionMeta(uid);
+          if (fetched) {
+            interactionMeta = Object.assign({}, loadLoginCtx(uid), fetched);
+          } else {
+            interactionMeta = loadLoginCtx(uid) ? { ...loadLoginCtx(uid), expired: true } : null;
+          }
+        }
+      } catch {
+        interactionMeta = loadLoginCtx(uid) ? { ...loadLoginCtx(uid), expired: true } : null;
+      }
+
+      saveLoginCtx(uid, interactionMeta || loadLoginCtx(uid) || { uid: uid, clientId: urlClientId });
+      if (interactionMeta?.clientId && interactionMeta.uid === uid && !interactionMeta.mismatch) {
+        savePageIntent(uid, interactionMeta.clientId);
+      }
+
+      if (interactionMeta?.mismatch || interactionMeta?.expired) {
+        if (forceExpired) {
+          if (!(await tryAutoLoginWithSso(uid))) {
+            showInteractionBlocked(
+              interactionMeta?.mismatch ? 'interaction_mismatch' : 'interaction_expired'
+            );
+          }
+          return interactionMeta;
+        }
+        if (await tryAutoLoginWithSso(uid)) {
+          return interactionMeta;
+        }
+        if (interactionMeta?.mismatch) {
+          showInteractionBlocked('interaction_mismatch');
+          return interactionMeta;
+        }
+        if (interactionMeta?.expired) {
+          showInteractionBlocked('interaction_expired');
+          return interactionMeta;
+        }
+      }
+
+      if (
+        interactionMeta?.hasSession &&
+        interactionMeta.uid === uid &&
+        !interactionMeta.mismatch &&
+        !interactionMeta.expired
+      ) {
+        if (interactionMeta.prompt === 'consent') {
+          const consentUrl = new URL('consent.html', global.location.href);
+          consentUrl.searchParams.set('uid', uid);
+          if (interactionMeta.clientId) {
+            consentUrl.searchParams.set('client_id', interactionMeta.clientId);
+          }
+          global.location.replace(consentUrl.toString());
+          return interactionMeta;
+        }
+        if (canResumeCurrentInteraction(uid) || resolveRestartAuthUrl(uid)) {
+          restartAuthChain('existing_session', uid);
         }
         return interactionMeta;
       }
-      if (await tryAutoLoginWithSso(uid)) {
-        return interactionMeta;
-      }
-      if (interactionMeta?.mismatch) {
-        showInteractionBlocked('interaction_mismatch');
-        return interactionMeta;
-      }
-      if (interactionMeta?.expired) {
-        showInteractionBlocked('interaction_expired');
-        return interactionMeta;
-      }
-    }
 
-    if (interactionMeta?.hasSession) {
-      if (interactionMeta.prompt === 'consent') {
-        const consentUrl = new URL('consent.html', global.location.href);
-        consentUrl.searchParams.set('uid', uid);
-        if (interactionMeta.clientId) {
-          consentUrl.searchParams.set('client_id', interactionMeta.clientId);
-        }
-        global.location.replace(consentUrl.toString());
-        return interactionMeta;
-      }
-      if (canResumeCurrentInteraction(uid) || resolveRestartAuthUrl(uid)) {
-        restartAuthChain('existing_session', uid);
-      }
       return interactionMeta;
+    } finally {
+      initInProgress = false;
     }
+  }
 
-    return interactionMeta;
+  async function syncUidWithActiveCookieUsingActive(urlUid, active) {
+    if (!active || !active.uid) {
+      return urlUid;
+    }
+    if (!urlUid || urlUid === active.uid) {
+      return active.uid;
+    }
+    if (isCrossClientInteraction(urlUid, active)) {
+      return urlUid;
+    }
+    const intendedClient = resolveIntendedClientId(urlUid);
+    if (intendedClient && active.clientId && intendedClient === active.clientId) {
+      const next = new URL(global.location.href);
+      next.searchParams.set('uid', active.uid);
+      next.searchParams.set('client_id', active.clientId);
+      next.searchParams.delete('error');
+      global.location.replace(next.toString());
+      return null;
+    }
+    return urlUid;
   }
 
   function isInvalidInteractionError(errorCode) {
@@ -856,8 +897,12 @@
   global.IamLoginSsoSync = {
     initSsoSync: initSsoSync,
     restartAuthChain: restartAuthChain,
+    restartFromSnapshot: restartFromSnapshot,
     isInvalidInteractionError: isInvalidInteractionError,
     probeSessionOnVisible: probeSessionOnVisible,
+    getCurrentInteractionUid: function () {
+      return currentUid || readUrlUid();
+    },
     getInteractionMeta: function () {
       return interactionMeta;
     },

@@ -9,10 +9,11 @@
   };
 
   const nginx = location.hostname.endsWith(".pinshuai.local");
+  // oidcIssuer 指向专用授权服务器源 auth.pinshuai.local；业务 API 仍走 api.pinshuai.local。
   window.IAM_CLIENT_CONFIG = nginx
     ? {
         iamBaseUrl: "http://api.pinshuai.local",
-        oidcIssuer: "http://api.pinshuai.local/oidc",
+        oidcIssuer: "http://auth.pinshuai.local/oidc",
         clientId: "iam-admin-spa",
         scopes: "openid profile email",
         appCode: "iam-admin"

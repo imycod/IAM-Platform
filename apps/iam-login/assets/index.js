@@ -380,19 +380,16 @@ function triggerLoginError() {
 }
 
 // ============ OIDC INTERACTION LOGIN ============
-const loginParams = new URLSearchParams(window.location.search);
-const interactionUid = loginParams.get('uid');
-const loginErrorCode = loginParams.get('error');
-const iamLoginCfg = window.IAM_LOGIN_CONFIG || { apiBaseUrl: 'http://localhost:3000' };
+// 后端在同源 /api/interaction/:uid 渲染本页时注入 window.__INTERACTION__。
+const interaction = window.__INTERACTION__ || {};
+const interactionUid = interaction.uid || null;
+const loginErrorCode = interaction.error || null;
 
 const ERROR_MESSAGES = {
   invalid_credentials: 'Invalid email or password. Please try again.',
   missing_credentials: 'Please enter your email and password.',
   missing_uid: 'Invalid login session. Please start sign-in from your application again.',
-  interaction_expired: 'Login session expired. Please return to your app and click SSO again.',
-  interaction_mismatch:
-    'Another app is signing in. Please close this tab and click SSO again from your application.',
-  invalid_session: 'Login session expired. Please return to your app and click SSO again.',
+  interaction_expired: 'Login session expired. Please return to your app and sign in again.',
 };
 
 function showLoginError(message) {
@@ -402,69 +399,76 @@ function showLoginError(message) {
   triggerLoginError();
 }
 
-async function initOidcLoginPage() {
+function submitInteractionLogin(email, password) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  // 同源相对路径；_interaction cookie 已按 /api/interaction/:uid 路径隔离。
+  form.action = `/api/interaction/${encodeURIComponent(interactionUid)}/login`;
+  form.style.display = 'none';
+  const add = (name, value) => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  };
+  add('email', email);
+  add('password', password);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/**
+ * 跨 tab 续登：本 tab 停在登录页时，若用户已在别处（另一个 client）完成登录、
+ * 同源 SSO 会话已建立，则用本 interaction 的 restartAuthUrl 重新发起 /oidc/auth，
+ * provider 依据 _session 静默续登（按 consentMode 走授权页或直接进入应用）。
+ */
+let ssoContinued = false;
+async function trySsoContinue() {
+  if (ssoContinued || !interaction.restartAuthUrl || !interaction.ssoStatusUrl) {
+    return;
+  }
+  try {
+    const res = await fetch(interaction.ssoStatusUrl, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      return;
+    }
+    const json = await res.json();
+    const data = json && json.code === 0 && json.data != null ? json.data : json;
+    if (data && data.authenticated) {
+      ssoContinued = true;
+      window.location.href = interaction.restartAuthUrl;
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function initOidcLoginPage() {
   if (!interactionUid) {
     showLoginError(ERROR_MESSAGES.missing_uid);
     document.getElementById('btn-login').disabled = true;
     return;
   }
-
-  if (window.IamLoginSsoSync) {
-    const forceExpired =
-      !!loginErrorCode && IamLoginSsoSync.isInvalidInteractionError(loginErrorCode);
-    await IamLoginSsoSync.initSsoSync(interactionUid, { forceExpired });
-    const meta = IamLoginSsoSync.getInteractionMeta();
-    const resolvedUid = IamLoginSsoSync.getCurrentInteractionUid() || interactionUid;
-    if (meta?.prompt === 'consent') {
-      const consentUrl = new URL('consent.html', window.location.href);
-      consentUrl.searchParams.set('uid', resolvedUid);
-      if (meta.clientId) {
-        consentUrl.searchParams.set('client_id', meta.clientId);
-      }
-      window.location.replace(consentUrl.toString());
-      return;
-    }
-  }
-
-  if (loginErrorCode === 'invalid_credentials') {
-    showLoginError(ERROR_MESSAGES.invalid_credentials);
-  } else if (
-    loginErrorCode &&
-    !(window.IamLoginSsoSync && IamLoginSsoSync.isInvalidInteractionError(loginErrorCode))
-  ) {
+  if (loginErrorCode) {
     showLoginError(ERROR_MESSAGES[loginErrorCode] || 'Login failed. Please try again.');
   }
+  void trySsoContinue();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void trySsoContinue();
+  });
+  window.addEventListener('focus', () => {
+    void trySsoContinue();
+  });
+  setInterval(() => {
+    if (!document.hidden) void trySsoContinue();
+  }, 2500);
 }
 
 initOidcLoginPage();
-
-async function submitInteractionLogin(email, password) {
-  // 始终使用 URL/当前 uid 提交；后端会按 path uid 锁定 interaction，双 Tab 也不会串号。
-  const uid =
-    new URLSearchParams(window.location.search).get('uid') ||
-    (window.IamLoginSsoSync && IamLoginSsoSync.getCurrentInteractionUid()) ||
-    interactionUid;
-
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = `${iamLoginCfg.apiBaseUrl.replace(/\/$/, '')}/api/interaction/${encodeURIComponent(uid)}/login`;
-  form.style.display = 'none';
-
-  const emailInputEl = document.createElement('input');
-  emailInputEl.type = 'hidden';
-  emailInputEl.name = 'email';
-  emailInputEl.value = email;
-  form.appendChild(emailInputEl);
-
-  const passwordInputEl = document.createElement('input');
-  passwordInputEl.type = 'hidden';
-  passwordInputEl.name = 'password';
-  passwordInputEl.value = password;
-  form.appendChild(passwordInputEl);
-
-  document.body.appendChild(form);
-  form.submit();
-}
 
 // ============ FORM VALIDATION ============
 document.getElementById('login-form').addEventListener('submit', (e) => {
@@ -509,7 +513,7 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
   btn.querySelector('.btn-text').textContent = 'Signing in...';
   btn.disabled = true;
 
-  void submitInteractionLogin(email, pwd);
+  submitInteractionLogin(email, pwd);
 });
 
 // Initial render

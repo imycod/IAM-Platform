@@ -89,8 +89,9 @@ export class OidcService implements IOidcInteraction {
     );
     const appCfg = this.config.getOrThrow<AppConfig>('app');
     const prefix = appCfg.globalPrefix;
-    const iamLoginUrl = appCfg.iamLoginUrl;
-    const iamApiBase = appCfg.url.replace(/\/$/, '');
+    // 授权服务器自身的源（= issuer 的 origin）。登录/consent 页与 /oidc 同源，
+    // interaction 走 per-uid 路径，_interaction cookie 天然按 uid 隔离，杜绝多 client 串号。
+    const issuerOrigin = new URL(issuer).origin;
     const clients = await this.oauthClientService.toOidcClients();
     const sessionTtlRaw = this.config.get<string>('OIDC_SESSION_TTL_SECONDS');
     const sessionTtlSeconds = sessionTtlRaw ? parseInt(sessionTtlRaw, 10) : 14 * 24 * 60 * 60;
@@ -136,7 +137,13 @@ export class OidcService implements IOidcInteraction {
           },
         },
       },
-      cookies: { keys: cookieKeys },
+      // http 子域下 SameSite=None 会被浏览器拒收（需 Secure），导致 _session 种不上、
+      // 「登上就会话过期」。所有 SSO 流程都是顶层 GET 跳转，SameSite=Lax 足够且能种上。
+      cookies: {
+        keys: cookieKeys,
+        long: { sameSite: 'lax' },
+        short: { sameSite: 'lax' },
+      },
       /**
        * 默认 scopes 不含 offline_access 时，oidc-provider 会把 authorization code 绑定到 SSO Session。
        * 多 SPA（8848/8849）并行授权时 Session 可能被新登录替换，导致 code 换 token 报 invalid_grant。
@@ -153,30 +160,9 @@ export class OidcService implements IOidcInteraction {
         AuthorizationCode: 300,
       },
       interactions: {
-        url: (
-          _ctx: unknown,
-          interaction: {
-            uid: string;
-            params?: Record<string, unknown>;
-            prompt?: { name?: string };
-          },
-        ) => {
-          if (!iamLoginUrl) {
-            return `/${prefix}/interaction/${interaction.uid}`;
-          }
-          // consent 必须先走 IAM 同源 /interaction，浏览器才能带上 _interaction cookie，
-          // 再由 InteractionController 302 到 consent.html；直连 4180 跨域 fetch 读不到 cookie。
-          if (interaction.prompt?.name === 'consent') {
-            return `${iamApiBase}/${prefix}/interaction/${interaction.uid}`;
-          }
-          const loginUrl = new URL(iamLoginUrl);
-          loginUrl.searchParams.set('uid', interaction.uid);
-          const clientId = interaction.params?.client_id;
-          if (typeof clientId === 'string' && clientId.length > 0) {
-            loginUrl.searchParams.set('client_id', clientId);
-          }
-          return loginUrl.toString();
-        },
+        // login 与 consent 统一走同源 per-uid 路径；InteractionController 在此渲染 UI。
+        url: (_ctx: unknown, interaction: { uid: string }) =>
+          `${issuerOrigin}/${prefix}/interaction/${interaction.uid}`,
       },
       /**
        * 按 oauth_client.consentMode 决定是否自动建立 Grant：

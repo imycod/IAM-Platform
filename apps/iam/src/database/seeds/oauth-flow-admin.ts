@@ -29,15 +29,24 @@ async function run(): Promise<void> {
     const existing = await clientRepo.findOne({ where: { applicationId: app.id } });
     if (existing) {
       const merged = mergeRedirectUris(existing.redirectUris, FLOW_ADMIN_SPA_REDIRECT_URIS);
+      let changed = false;
       if (merged.length !== (existing.redirectUris?.length ?? 0)) {
         existing.redirectUris = merged;
+        changed = true;
+      }
+      // 业务 client 首次访问需用户授权确认
+      if (existing.consentMode !== 'first_time') {
+        existing.consentMode = 'first_time';
+        changed = true;
+      }
+      if (changed) {
         await clientRepo.save(existing);
         // eslint-disable-next-line no-console
-        console.log(`[seed:oauth-flow-admin] 已更新 redirect_uris: ${merged.join(', ')}`);
+        console.log(`[seed:oauth-flow-admin] 已更新 redirect_uris/consentMode(first_time)`);
       } else {
         // eslint-disable-next-line no-console
         console.log(
-          `[seed:oauth-flow-admin] oauth_client 已存在: clientId=${existing.clientId}，redirect_uris 已是最新`,
+          `[seed:oauth-flow-admin] oauth_client 已存在: clientId=${existing.clientId}，无需更新`,
         );
       }
       return;
@@ -54,6 +63,7 @@ async function run(): Promise<void> {
         scopes: ['openid', 'profile', 'email'],
         tokenEndpointAuthMethod: 'none',
         requirePkce: true,
+        consentMode: 'first_time',
       }),
     );
 

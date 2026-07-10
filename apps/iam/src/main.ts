@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { join } from 'node:path';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
@@ -30,7 +31,7 @@ async function bootstrap(): Promise<void> {
     'http://localhost:4180',
     'http://127.0.0.1:4180',
     // Nginx 子域模拟（deploy/nginx）
-    'http://login.pinshuai.local',
+    'http://auth.pinshuai.local',
     'http://api.pinshuai.local',
     'http://admin.pinshuai.local',
     'http://flow.pinshuai.local',
@@ -68,6 +69,11 @@ async function bootstrap(): Promise<void> {
       .catch((err) => next(err));
   });
 
+  // 登录/consent UI 的静态资源与授权服务器同源托管（InteractionController 渲染 HTML 外壳，
+  // 资源经此路径加载）。同源后 _interaction cookie 天然按 uid 路径隔离，无需跨域补丁。
+  const iamLoginDir = process.env.IAM_LOGIN_DIR || join(process.cwd(), 'apps', 'iam-login');
+  expressApp.use('/interaction-assets', express.static(join(iamLoginDir, 'assets')));
+
   app.setGlobalPrefix(appCfg.globalPrefix);
   app.useGlobalPipes(
     new ValidationPipe({
@@ -88,12 +94,9 @@ async function bootstrap(): Promise<void> {
     'Bootstrap',
   );
   Logger.log(
-    `OIDC issuer=${oidcIssuer}, IAM_LOGIN_URL=${appCfg.iamLoginUrl ?? '(内置简易页)'}`,
+    `OIDC issuer=${oidcIssuer}（登录/consent UI 同源托管于 ${new URL(oidcIssuer).origin}/${appCfg.globalPrefix}/interaction/:uid）`,
     'Bootstrap',
   );
-  if (appCfg.iamLoginUrl?.includes('localhost') && process.env.NODE_ENV === 'nginx') {
-    Logger.warn('NODE_ENV=nginx 但 IAM_LOGIN_URL 仍指向 localhost，请检查 .env.nginx', 'Bootstrap');
-  }
 }
 
 void bootstrap();

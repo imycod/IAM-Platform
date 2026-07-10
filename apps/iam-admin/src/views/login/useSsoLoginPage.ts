@@ -2,7 +2,6 @@ import { onMounted, onUnmounted, ref } from "vue";
 import Cookies from "js-cookie";
 import { getToken, multipleTabsKey } from "@/utils/auth";
 import {
-  checkIamSsoSession,
   clearOidcRedirectLock,
   clearSkipAutoSso,
   getLoginRouteQuery,
@@ -116,19 +115,12 @@ export function useSsoLoginPage(onEnterApp: () => void) {
     }
 
     if (shouldAutoSso()) {
-      phase.value = "probing";
-      statusText.value = "正在检测统一登录状态…";
-      ssoBusy.value = true;
-      const iamSession = await checkIamSsoSession();
-      if (iamSession) {
-        clearSkipAutoSso();
-        await beginAuthorize(true);
-        return;
-      }
-      resetSsoBusy();
-    } else {
-      skipAutoSso();
+      // 直接发起授权：IdP 有会话则静默回跳 code，否则落授权服务器登录页。
+      // 不再跨源探测 sso/status（SameSite=Lax 跨源不带 cookie，探测不可靠）。
+      await beginAuthorize(false);
+      return;
     }
+    skipAutoSso();
 
     phase.value = "ready";
     statusText.value = "";

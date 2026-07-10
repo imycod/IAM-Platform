@@ -30,15 +30,24 @@ async function run(): Promise<void> {
     const existing = await clientRepo.findOne({ where: { applicationId: app.id } });
     if (existing) {
       const merged = mergeRedirectUris(existing.redirectUris, IAM_ADMIN_SPA_REDIRECT_URIS);
+      let changed = false;
       if (merged.length !== (existing.redirectUris?.length ?? 0)) {
         existing.redirectUris = merged;
+        changed = true;
+      }
+      // IAM 管理端登录自身，不对自己弹授权确认
+      if (existing.consentMode !== 'never') {
+        existing.consentMode = 'never';
+        changed = true;
+      }
+      if (changed) {
         await clientRepo.save(existing);
         // eslint-disable-next-line no-console
-        console.log(`[seed:oauth-iam-admin] 已更新 redirect_uris: ${merged.join(', ')}`);
+        console.log(`[seed:oauth-iam-admin] 已更新 redirect_uris/consentMode(never)`);
       } else {
         // eslint-disable-next-line no-console
         console.log(
-          `[seed:oauth-iam-admin] oauth_client 已存在: clientId=${existing.clientId}，redirect_uris 已是最新`,
+          `[seed:oauth-iam-admin] oauth_client 已存在: clientId=${existing.clientId}，无需更新`,
         );
       }
       return;
@@ -55,6 +64,7 @@ async function run(): Promise<void> {
         scopes: ['openid', 'profile', 'email'],
         tokenEndpointAuthMethod: 'none',
         requirePkce: true,
+        consentMode: 'never',
       }),
     );
 

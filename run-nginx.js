@@ -10,6 +10,19 @@ const adminDir = path.join(root, 'apps', 'iam-admin');
 
 const children = [];
 
+const NO_PROXY_HOSTS =
+  'localhost,127.0.0.1,*.pinshuai.local,pinshuai.local';
+
+function mergeEnv(extraEnv = {}) {
+  const base = { ...process.env, ...extraEnv };
+  const existing = base.NO_PROXY || base.no_proxy || '';
+  const merged = [...new Set([...existing.split(','), ...NO_PROXY_HOSTS.split(',')])]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(',');
+  return { ...base, NO_PROXY: merged, no_proxy: merged };
+}
+
 function start(label, command, args, cwd, extraEnv = {}) {
   console.log(`[${label}] starting...`);
 
@@ -17,7 +30,7 @@ function start(label, command, args, cwd, extraEnv = {}) {
     cwd,
     shell: true,
     stdio: 'inherit',
-    env: { ...process.env, ...extraEnv },
+    env: mergeEnv(extraEnv),
   });
 
   child.on('error', (err) => {
@@ -56,19 +69,18 @@ function shutdown() {
 }
 
 async function main() {
-  console.log('\n=== Nginx 子域模式 (admin/login/api/flow.pinshuai.local) ===');
-  console.log('请确认 hosts 已配置且 docker nginx 已启动：');
-  console.log('  docker compose -f deploy/docker-compose.nginx.yaml up -d\n');
+  console.log('\n=== Nginx 子域模式 (auth/api/admin/flow.pinshuai.local) ===');
+  console.log('请确认 hosts 已配置（含 auth.pinshuai.local）且 docker nginx 已启动：');
+  console.log('  docker compose -f deploy/docker-compose.nginx.yaml up -d');
+  console.log('\n若 localhost 正常但 *.pinshuai.local 502：请将 *.pinshuai.local 加入代理绕过（Clash DIRECT）\n');
 
+  // 登录/consent UI 由 IAM 后端在 auth.pinshuai.local 同源渲染，无需再单独起 :4180 静态服务。
   start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root);
   await sleep(4000);
 
-  start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root);
-  await sleep(2000);
-
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);
 
-  console.log('\n访问 http://admin.pinshuai.local （未登录应跳转 http://login.pinshuai.local）');
+  console.log('\n访问 http://admin.pinshuai.local （未登录应跳转 http://auth.pinshuai.local 的统一登录页）');
   console.log('Press Ctrl+C to stop.\n');
 }
 

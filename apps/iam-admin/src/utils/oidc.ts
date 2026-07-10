@@ -19,7 +19,7 @@ function resolveClientConfig(): IamClientConfig {
   return nginx
     ? {
         iamBaseUrl: "http://api.pinshuai.local",
-        oidcIssuer: "http://api.pinshuai.local/oidc",
+        oidcIssuer: "http://auth.pinshuai.local/oidc",
         clientId: "iam-admin-spa",
         redirectUri: "",
         scopes: "openid profile email",
@@ -272,8 +272,8 @@ export function performGlobalLogout(
 }
 
 /**
- * 应用入口 SSO：先探测 IAM 会话，有则静默，无则交互式（最终到 login.pinshuai.local?uid=）。
- * 供路由守卫调用，避免先落到 /#/login。
+ * 应用入口 SSO：顶层跳转到授权服务器 /oidc/auth。
+ * 授权服务器有会话则静默回跳 code，否则展示同源统一登录页（auth.pinshuai.local）。
  */
 export async function beginSsoRedirect(
   cfg: IamClientConfig = IAM_CLIENT_CONFIG
@@ -282,10 +282,7 @@ export async function beginSsoRedirect(
     return;
   }
   clearOidcRedirectLock();
-  const iamSession = await checkIamSsoSession(cfg);
-  if (iamSession) {
-    await trySilentOidcLogin(cfg);
-  } else {
-    await startOidcLogin(cfg);
-  }
+  // 顶层跳转 /oidc/auth：授权服务器有 SSO 会话则静默回跳 code，否则展示登录页。
+  // 不再跨源探测 sso/status（SameSite=Lax 跨源不带 cookie，探测不可靠）。
+  await startOidcLogin(cfg);
 }

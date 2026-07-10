@@ -154,67 +154,26 @@ export class InteractionController {
   }
 
   /**
-   * 把请求的 _interaction cookie 覆写为 URL path 里的 uid。
-   *
-   * 同源 per-uid 路径模型下，URL 的 :uid 是权威来源（每个 interaction 独占
-   * /api/interaction/:uid 路径）。当浏览器未带上 _interaction cookie（本地多端口共享
-   * localhost 的历史脏 cookie、或 cookie 尚未跨端口就绪）时，用 path uid 兜底重绑，
-   * 使 provider 作用于本 URL 对应的 interaction。uid 不可猜、且登录仍需校验凭证，安全。
+   * 解析本 URL uid 对应的 interaction：URL path 的 uid 为权威来源，直接按 uid 查库。
+   * 不依赖浏览器 _interaction cookie（per-path cookie 在跨 302 或代理场景下常未就绪）。
    */
-  private pinCookie(req: Request, name: string, value: string): void {
-    const raw = req.headers.cookie ?? '';
-    const kept = raw
-      .split(';')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .filter((part) => !part.startsWith(`${name}=`) && !part.startsWith(`${name}.sig=`));
-    kept.push(`${name}=${value}`);
-    req.headers.cookie = kept.join('; ');
-    const parsed = (req as Request & { cookies?: Record<string, string> }).cookies;
-    if (parsed && typeof parsed === 'object') {
-      parsed[name] = value;
-    }
-  }
-
-  private pinInteractionCookie(req: Request, uid: string): void {
-    this.pinCookie(req, '_interaction', uid);
-  }
-
-  private pinInteractionResumeCookie(req: Request, uid: string): void {
-    this.pinCookie(req, '_interaction_resume', uid);
-  }
-
-  /** 清掉旧架构遗留的 path=/ interaction cookie，避免与 per-uid cookie 双发干扰 provider。 */
-  private clearLegacyInteractionCookies(res: Response): void {
-    const opts = { path: '/' as const };
-    res.clearCookie('_interaction', opts);
-    res.clearCookie('_interaction.sig', opts);
-    res.clearCookie('_interaction_resume', { path: '/oidc' });
-  }
-
-  /**
-   * 解析本 URL uid 对应的 interaction：URL path 的 uid 为权威来源，始终先 pin cookie 再 getDetails。
-   * 返回 null 表示该 interaction 确实已失效。
-   */
-  private async resolveDetails(req: Request, res: Response, uid: string) {
-    const oidc = this.ensureOidc();
-    const alive = await oidc.findInteractionByUid(uid);
-    if (!alive) {
+  private async resolveDetails(_req: Request, res: Response, uid: string) {
+    const details = await this.ensureOidc().findInteractionByUid(uid);
+    if (!details) {
       return null;
     }
-    this.pinInteractionCookie(req, uid);
-    this.pinInteractionResumeCookie(req, uid);
-    try {
-      const details = await oidc.getDetails(req, res);
-      if (details.uid === uid) {
-        return details;
-      }
-    } catch (err) {
-      if (!this.isInvalidInteractionError(err)) {
-        throw err;
-      }
-    }
-    return null;
+    this.setInteractionCookiesOnResponse(res, uid);
+    return details;
+  }
+
+  /** 给浏览器种 per-uid interaction cookie，便于后续 /oidc/auth/:uid resume。 */
+  private setInteractionCookiesOnResponse(res: Response, uid: string): void {
+    const prefix = this.getGlobalPrefix();
+    const path = `/${prefix}/interaction/${uid}`;
+    const opts = { path, httpOnly: true, sameSite: 'lax' as const, maxAge: 3600_000 };
+    res.cookie('_interaction', uid, opts);
+    res.clearCookie('_interaction', { path: '/' });
+    res.clearCookie('_interaction.sig', { path: '/' });
   }
 
   /** 读取 iam-login 静态外壳，剥离旧脚本、把资源指向同源 /interaction-assets，缓存一次。 */
@@ -245,7 +204,6 @@ export class InteractionController {
     kind: 'login' | 'consent',
     bootstrap: InteractionBootstrap,
   ): void {
-    this.clearLegacyInteractionCookies(res);
     const inject = `<script>window.__INTERACTION__=${JSON.stringify(bootstrap)};</script>`;
     const html = this.loadShell(kind).replace('</head>', `${inject}</head>`);
     res.type('html').send(html);
@@ -308,7 +266,7 @@ export class InteractionController {
       const clientId = details.params.client_id as string | undefined;
       // consentMode=never：自动建立 Grant 并完成授权，不展示确认页
       if (clientId && (await oidc.shouldAutoConsent(clientId))) {
-        await oidc.finishConsent(req, res);
+        await oidc.finishConsent(req, res, uid);
         return;
       }
       this.renderInteractionPage(res, 'consent', await this.buildBootstrap('consent', details, error));
@@ -317,7 +275,7 @@ export class InteractionController {
 
     // 已有 IAM SSO 会话：直接完成 login interaction（静默 SSO / 跨 tab 续登）
     if (details.prompt?.name === 'login' && details.session?.accountId) {
-      await oidc.finishLogin(req, res, { accountId: details.session.accountId, remember: true });
+      await oidc.finishLogin(req, res, { accountId: details.session.accountId, remember: true }, uid);
       return;
     }
 
@@ -345,7 +303,7 @@ export class InteractionController {
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       });
-      await oidc.finishLogin(req, res, { accountId: user.id, remember: true });
+      await oidc.finishLogin(req, res, { accountId: user.id, remember: true }, uid);
     } catch (err) {
       if (this.isInvalidInteractionError(err)) {
         res.redirect(this.interactionUrl(uid, 'interaction_expired'));
@@ -375,7 +333,7 @@ export class InteractionController {
       return;
     }
 
-    await oidc.finishConsent(req, res);
+    await oidc.finishConsent(req, res, uid);
   }
 
   @Post(':uid/abort')

@@ -32,11 +32,11 @@ export interface IOidcInteraction {
   /** 按 uid 读取仍存活的 interaction（不依赖 _interaction cookie）。 */
   findInteractionByUid(uid: string): Promise<OidcInteractionDetails | null>;
 
-  /** 完成登录交互，回到授权流程（对应 provider.interactionFinished）。 */
-  finishLogin(req: unknown, res: unknown, result: OidcLoginResult): Promise<void>;
+  /** 完成登录交互，回到授权流程（按 URL uid 完成，不依赖 _interaction cookie）。 */
+  finishLogin(req: unknown, res: unknown, result: OidcLoginResult, uid: string): Promise<void>;
 
-  /** 完成 consent 交互（自动授权 scope），演示环境跳过授权确认页。 */
-  finishConsent(req: unknown, res: unknown): Promise<void>;
+  /** 完成 consent 交互（按 URL uid 完成，不依赖 _interaction cookie）。 */
+  finishConsent(req: unknown, res: unknown, uid: string): Promise<void>;
 
   /** consentMode=never 时自动完成 consent，否则需用户确认。 */
   shouldAutoConsent(clientId: string): Promise<boolean>;

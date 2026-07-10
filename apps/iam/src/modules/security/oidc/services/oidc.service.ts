@@ -438,12 +438,58 @@ export class OidcService implements IOidcInteraction {
     }
   }
 
-  async finishLogin(req: unknown, res: unknown, result: OidcLoginResult): Promise<void> {
+  /**
+   * 按 URL uid 结束 interaction 并 303 回跳 returnTo。
+   * 标准同源模型下 URL uid 是权威来源，避免浏览器未带上 per-path _interaction cookie 时
+   * provider.interactionDetails() 读不到 cookie 而报 interaction session not found。
+   */
+  private async completeInteractionByUid(
+    uid: string,
+    res: Response,
+    result: Record<string, unknown>,
+    mergeWithLastSubmission = true,
+  ): Promise<void> {
     const provider = await this.getProvider();
-    const details = (await provider.interactionDetails(
-      req as never,
-      res as never,
-    )) as OidcInteractionDetails;
+    const interaction = await provider.Interaction.find(uid);
+    if (!interaction) {
+      throw new ForbiddenException('interaction session not found');
+    }
+
+    const lastSubmission = (interaction as { lastSubmission?: Record<string, unknown> })
+      .lastSubmission;
+    if (mergeWithLastSubmission && !('error' in result)) {
+      interaction.result = { ...lastSubmission, ...result };
+    } else {
+      interaction.result = result;
+    }
+
+    const exp = (interaction as { exp?: number }).exp;
+    if (typeof exp !== 'number') {
+      throw new ForbiddenException('interaction session not found');
+    }
+    const epochTime = (await dynamicImport<{ default: (date?: Date) => number }>(
+      'oidc-provider/lib/helpers/epoch_time.js',
+    )).default;
+    await interaction.save(exp - epochTime());
+
+    const returnTo = (interaction as { returnTo?: string }).returnTo;
+    if (!returnTo) {
+      throw new ForbiddenException('interaction returnTo missing');
+    }
+    res.redirect(303, returnTo);
+  }
+
+  async finishLogin(
+    req: unknown,
+    res: unknown,
+    result: OidcLoginResult,
+    uid: string,
+  ): Promise<void> {
+    const provider = await this.getProvider();
+    const details = (await provider.Interaction.find(uid)) as OidcInteractionDetails | undefined;
+    if (!details) {
+      throw new ForbiddenException('interaction session not found');
+    }
 
     const clientId = details.params?.client_id as string | undefined;
     if (clientId) {
@@ -456,16 +502,16 @@ export class OidcService implements IOidcInteraction {
       }
     }
 
-    await provider.interactionFinished(
-      req as never,
-      res as never,
+    await this.completeInteractionByUid(
+      uid,
+      res as Response,
       {
         login: {
           accountId: result.accountId,
           remember: result.remember ?? true,
         },
       },
-      { mergeWithLastSubmission: true },
+      true,
     );
   }
 
@@ -474,14 +520,14 @@ export class OidcService implements IOidcInteraction {
     return (client?.consentMode ?? DEFAULT_CONSENT_MODE) === 'never';
   }
 
-  async finishConsent(req: unknown, res: unknown): Promise<void> {
+  async finishConsent(req: unknown, res: unknown, uid: string): Promise<void> {
     const provider = await this.getProvider();
-    const details = (await provider.interactionDetails(
-      req as never,
-      res as never,
-    )) as OidcInteractionDetails & {
+    const details = (await provider.Interaction.find(uid)) as OidcInteractionDetails & {
       session?: { accountId?: string };
     };
+    if (!details) {
+      throw new ForbiddenException('interaction session not found');
+    }
 
     const accountId = details.session?.accountId;
     const clientId = details.params.client_id as string | undefined;
@@ -502,11 +548,11 @@ export class OidcService implements IOidcInteraction {
     }
     await grant.save();
 
-    await provider.interactionFinished(
-      req as never,
-      res as never,
+    await this.completeInteractionByUid(
+      uid,
+      res as Response,
       { consent: { grantId: grant.jti } },
-      { mergeWithLastSubmission: true },
+      true,
     );
   }
 

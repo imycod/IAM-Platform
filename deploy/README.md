@@ -1,5 +1,7 @@
 # 本地 Nginx 上线模拟
 
+> 完整架构方案与改动记录见 [doc/SSO-授权服务器重构.md](../doc/SSO-授权服务器重构.md)。
+
 通过子域反代宿主机 dev 服务，模拟 `doc/nginx-部署.md` 中的生产拓扑。
 
 架构：`auth.pinshuai.local` 是专用授权服务器源（对标 accounts.google.com），

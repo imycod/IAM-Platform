@@ -9,6 +9,7 @@ import express from 'express';
 import { AllExceptionsFilter, TransformInterceptor } from '@app/common';
 import type { AppConfig } from '@app/config';
 import { AppModule } from './app.module';
+import { resolveInteractionUiDir } from './modules/identity/auth/interaction/interaction-ui.paths';
 import { OidcService } from './modules/security/oidc/services/oidc.service';
 
 async function bootstrap(): Promise<void> {
@@ -44,15 +45,6 @@ async function bootstrap(): Promise<void> {
       // ignore invalid APP_URL
     }
   }
-  const iamLoginUrl = appCfg.iamLoginUrl;
-  if (iamLoginUrl) {
-    try {
-      corsOrigins.add(new URL(iamLoginUrl).origin);
-    } catch {
-      // ignore invalid IAM_LOGIN_URL
-    }
-  }
-
   app.enableCors({
     origin: [...corsOrigins],
     credentials: true,
@@ -71,8 +63,8 @@ async function bootstrap(): Promise<void> {
 
   // 登录/consent UI 的静态资源与授权服务器同源托管（InteractionController 渲染 HTML 外壳，
   // 资源经此路径加载）。同源后 _interaction cookie 天然按 uid 路径隔离，无需跨域补丁。
-  const iamLoginDir = process.env.IAM_LOGIN_DIR || join(process.cwd(), 'apps', 'iam-login');
-  expressApp.use('/interaction-assets', express.static(join(iamLoginDir, 'assets')));
+  const interactionUiDir = resolveInteractionUiDir();
+  expressApp.use('/interaction-assets', express.static(join(interactionUiDir, 'assets')));
 
   app.setGlobalPrefix(appCfg.globalPrefix);
   app.useGlobalPipes(

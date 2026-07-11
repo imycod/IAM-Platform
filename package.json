@@ -5,14 +5,14 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build iam",
-    "start": "nest start iam",
-    "start:dev": "cross-env NODE_ENV=development nest start iam --watch",
-    "start:dev:nginx": "cross-env NODE_ENV=nginx nest start iam --watch",
-    "start:debug:nginx": "cross-env NODE_ENV=nginx nest start iam --debug 9229 --watch",
-    "dev:nginx": "node run-nginx.js",
-    "start:debug": "cross-env NODE_ENV=development nest start iam --debug 9229 --watch",
-    "start:prod": "cross-env NODE_ENV=production node dist/apps/iam/main",
+    "build:iam": "nest build iam",
+    "start:iam": "nest start iam",
+    "start:iam:dev": "cross-env NODE_ENV=development nest start iam --watch",
+    "start:iam:dev:nginx": "cross-env NODE_ENV=nginx nest start iam --watch",
+    "start:iam:debug:nginx": "cross-env NODE_ENV=nginx nest start iam --debug 9229 --watch",
+    "dev:iam:nginx": "node run-nginx.js",
+    "start:iam:debug": "cross-env NODE_ENV=development nest start iam --debug 9229 --watch",
+    "start:iam:prod": "cross-env NODE_ENV=production node dist/apps/iam/apps/iam/src/main",
     "lint": "eslint \"{apps,libs}/**/*.ts\" --fix",
     "format": "prettier --write \"{apps,libs}/**/*.ts\"",
     "typeorm": "node -r ts-node/register -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d apps/iam/src/database/data-source.ts",
@@ -34,8 +34,7 @@
     "seed:iam-admin-security": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-security-data.ts",
     "seed:assign-iam-admin-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/assign-iam-admin-admin-role.ts",
     "seed:oauth-iam-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/oauth-iam-admin.ts",
-    "flow-admin:dev": "node apps/flow-admin/server.js",
-    "iam-login:dev": "node apps/iam-login/server.js"
+    "flow-admin:dev": "node apps/flow-admin/server.js"
   },
   "dependencies": {
     "@casl/ability": "^6.7.2",

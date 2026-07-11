@@ -18,6 +18,7 @@
   <script src="oidc.js"></script>
   <script>
     (async function () {
+      debugger
       const cfg = window.IAM_CLIENT_CONFIG;
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");

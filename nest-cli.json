@@ -16,7 +16,13 @@
       "entryFile": "main",
       "sourceRoot": "apps/iam/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/iam/tsconfig.app.json"
+        "tsConfigPath": "apps/iam/tsconfig.app.json",
+        "assets": [
+          {
+            "include": "modules/identity/auth/interaction/ui/**/*",
+            "watchAssets": true
+          }
+        ]
       }
     },
     "common": {

@@ -1,3 +1,6 @@
+/**
+ * 本地开发一键启动：IAM backend + iam-admin
+ */
 const { spawn } = require('child_process');
 const path = require('path');
 
@@ -52,11 +55,8 @@ function shutdown() {
 }
 
 async function main() {
-  start('iam-backend', 'pnpm', ['run', 'start:dev'], root);
+  start('iam-backend', 'pnpm', ['run', 'start:iam:dev'], root);
   await sleep(3000);
-
-  start('iam-login', 'pnpm', ['run', 'iam-login:dev'], root);
-  await sleep(2000);
 
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);
 

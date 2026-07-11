@@ -82,6 +82,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
   }
 
   async function onManualSsoLogin() {
+    debugger
     if (redirecting || ssoBusy.value) {
       return;
     }
@@ -93,7 +94,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
   onMounted(async () => {
     document.addEventListener("visibilitychange", onTabVisible);
     window.addEventListener("focus", onTabVisible);
-
+    debugger
     if (hasLocalSession()) {
       if (isSsoSession()) {
         markSsoLoginComplete();

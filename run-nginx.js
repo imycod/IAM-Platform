@@ -1,5 +1,5 @@
 /**
- * Nginx 子域模式下一键启动：IAM(backend nginx env) + iam-login + iam-admin
+ * Nginx 子域模式下一键启动：IAM(backend nginx env) + iam-admin
  * 用法：pnpm dev:nginx
  */
 const { spawn } = require('child_process');
@@ -75,7 +75,7 @@ async function main() {
   console.log('\n若 localhost 正常但 *.pinshuai.local 502：请将 *.pinshuai.local 加入代理绕过（Clash DIRECT）\n');
 
   // 登录/consent UI 由 IAM 后端在 auth.pinshuai.local 同源渲染，无需再单独起 :4180 静态服务。
-  start('iam-backend', 'pnpm', ['run', 'start:dev:nginx'], root);
+  start('iam-backend', 'pnpm', ['run', 'start:iam:dev:nginx'], root);
   await sleep(4000);
 
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);

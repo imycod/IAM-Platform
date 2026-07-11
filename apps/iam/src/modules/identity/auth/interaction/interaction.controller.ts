@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveInteractionUiDir } from './interaction-ui.paths';
 import {
   Controller,
   Get,
@@ -176,7 +177,7 @@ export class InteractionController {
     res.clearCookie('_interaction.sig', { path: '/' });
   }
 
-  /** 读取 iam-login 静态外壳，剥离旧脚本、把资源指向同源 /interaction-assets，缓存一次。 */
+  /** 读取 interaction UI 静态外壳，把资源指向同源 /interaction-assets，缓存一次。 */
   private loadShell(kind: 'login' | 'consent'): string {
     if (kind === 'login' && this.loginShell) {
       return this.loginShell;
@@ -184,13 +185,10 @@ export class InteractionController {
     if (kind === 'consent' && this.consentShell) {
       return this.consentShell;
     }
-    const baseDir = process.env.IAM_LOGIN_DIR || join(process.cwd(), 'apps', 'iam-login');
-    const file = kind === 'login' ? 'index.html' : 'consent.html';
+    const baseDir = resolveInteractionUiDir();
+    const file = kind === 'login' ? 'login.html' : 'consent.html';
     const raw = readFileSync(join(baseDir, file), 'utf8');
-    const transformed = raw
-      .replace(/<script src="\.\/config\.js"><\/script>\s*/g, '')
-      .replace(/<script src="\.\/assets\/sso-sync\.js"><\/script>\s*/g, '')
-      .replace(/\.\/assets\//g, '/interaction-assets/');
+    const transformed = raw.replace(/\.\/assets\//g, '/interaction-assets/');
     if (kind === 'login') {
       this.loginShell = transformed;
     } else {

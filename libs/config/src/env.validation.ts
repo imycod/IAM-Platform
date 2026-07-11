@@ -30,7 +30,4 @@ export const envValidationSchema = Joi.object({
   OIDC_COOKIE_KEYS: Joi.string().optional(),
   /** OIDC SSO Session TTL（秒），默认 14 天；测试可设 20 */
   OIDC_SESSION_TTL_SECONDS: Joi.number().integer().min(1).optional(),
-
-  /** 统一登录页（iam-login）地址，OIDC interaction 会跳转至此 */
-  IAM_LOGIN_URL: Joi.string().uri().optional(),
 });

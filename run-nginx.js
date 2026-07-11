@@ -1,6 +1,6 @@
 /**
- * Nginx 子域模式下一键启动：IAM(backend nginx env) + iam-admin
- * 用法：pnpm dev:nginx
+ * Stage 子域模式下一键启动：IAM(NODE_ENV=stage / .env.stage) + iam-admin
+ * 用法：pnpm dev:iam:stage
  */
 const { spawn } = require('child_process');
 const path = require('path');
@@ -69,13 +69,13 @@ function shutdown() {
 }
 
 async function main() {
-  console.log('\n=== Nginx 子域模式 (auth/api/admin/flow.pinshuai.local) ===');
+  console.log('\n=== Stage 子域模式 (auth/api/admin/flow.pinshuai.local) ===');
   console.log('请确认 hosts 已配置（含 auth.pinshuai.local）且 docker nginx 已启动：');
   console.log('  docker compose -f deploy/docker-compose.nginx.yaml up -d');
   console.log('\n若 localhost 正常但 *.pinshuai.local 502：请将 *.pinshuai.local 加入代理绕过（Clash DIRECT）\n');
 
   // 登录/consent UI 由 IAM 后端在 auth.pinshuai.local 同源渲染，无需再单独起 :4180 静态服务。
-  start('iam-backend', 'pnpm', ['run', 'start:iam:dev:nginx'], root);
+  start('iam-backend', 'pnpm', ['run', 'start:iam:dev:stage'], root);
   await sleep(4000);
 
   start('iam-admin', 'pnpm', ['run', 'dev'], adminDir);

@@ -9,6 +9,26 @@ export interface IamClientConfig {
   appCode: string;
 }
 
+const SHARED = {
+  clientId: "iam-admin-spa",
+  scopes: "openid profile email",
+  appCode: "iam-admin"
+} as const;
+
+/** admin.<root> → api.<root> + auth.<root>（stage / production 共用，不写死域名） */
+function fromSubdomainHost(hostname: string): IamClientConfig | null {
+  const parts = hostname.split(".");
+  if (parts.length < 3) return null;
+  const root = parts.slice(1).join(".");
+  const protocol = location.protocol;
+  return {
+    iamBaseUrl: `${protocol}//api.${root}`,
+    oidcIssuer: `${protocol}//auth.${root}/oidc`,
+    redirectUri: `${location.origin}/callback.html`,
+    ...SHARED
+  };
+}
+
 function resolveClientConfig(): IamClientConfig {
   const fromWindow = (window as unknown as { IAM_CLIENT_CONFIG?: IamClientConfig })
     .IAM_CLIENT_CONFIG;
@@ -16,50 +36,35 @@ function resolveClientConfig(): IamClientConfig {
     return { redirectUri: "", ...fromWindow };
   }
 
-  const isLocalHost =
-    location.hostname === "localhost" || location.hostname === "127.0.0.1";
-  const nginx = location.hostname.endsWith(".pinshuai.local");
-  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname);
-  const adminOrigin = isLanIp ? `http://${location.hostname}:9446` : null;
+  const host = location.hostname;
+  const isLocalHost = host === "localhost" || host === "127.0.0.1";
+  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(host);
 
-  if (nginx) {
-    return {
-      iamBaseUrl: "http://api.pinshuai.local",
-      oidcIssuer: "http://auth.pinshuai.local/oidc",
-      clientId: "iam-admin-spa",
-      redirectUri: "",
-      scopes: "openid profile email",
-      appCode: "iam-admin"
-    };
-  }
-  if (adminOrigin) {
+  if (isLanIp) {
+    const adminOrigin = `http://${host}:9446`;
     return {
       iamBaseUrl: adminOrigin,
       oidcIssuer: `${adminOrigin}/oidc`,
-      clientId: "iam-admin-spa",
-      redirectUri: "",
-      scopes: "openid profile email",
-      appCode: "iam-admin"
+      redirectUri: `${adminOrigin}/callback.html`,
+      ...SHARED
     };
   }
   if (isLocalHost) {
     return {
       iamBaseUrl: "http://localhost:3000",
       oidcIssuer: "http://localhost:3000/oidc",
-      clientId: "iam-admin-spa",
       redirectUri: "",
-      scopes: "openid profile email",
-      appCode: "iam-admin"
+      ...SHARED
     };
   }
-  return {
-    iamBaseUrl: location.origin,
-    oidcIssuer: `${location.origin}/oidc`,
-    clientId: "iam-admin-spa",
-    redirectUri: "",
-    scopes: "openid profile email",
-    appCode: "iam-admin"
-  };
+  return (
+    fromSubdomainHost(host) || {
+      iamBaseUrl: location.origin,
+      oidcIssuer: `${location.origin}/oidc`,
+      redirectUri: `${location.origin}/callback.html`,
+      ...SHARED
+    }
+  );
 }
 
 export const IAM_CLIENT_CONFIG: IamClientConfig = resolveClientConfig();

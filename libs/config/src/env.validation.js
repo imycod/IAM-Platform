@@ -38,7 +38,7 @@ const Joi = __importStar(require("joi"));
 exports.envValidationSchema = Joi.object({
     APP_PORT: Joi.number().default(3000),
     NODE_ENV: Joi.string()
-        .valid('development', 'test', 'production', 'nginx')
+        .valid('development', 'test', 'stage', 'production')
         .default('development'),
     APP_URL: Joi.string().uri().default('http://localhost:3000'),
     APP_GLOBAL_PREFIX: Joi.string().default('api'),

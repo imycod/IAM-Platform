@@ -18,8 +18,12 @@
   <script src="oidc.js"></script>
   <script>
     (async function () {
-      debugger
       const cfg = window.IAM_CLIENT_CONFIG;
+      if (!cfg || !cfg.oidcIssuer) {
+        document.getElementById("msg").innerHTML =
+          '<span class="err">缺少 IAM_CLIENT_CONFIG，请检查 config.js</span>';
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
       const state = params.get("state");

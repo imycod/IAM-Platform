@@ -12,7 +12,7 @@ import { envValidationSchema } from './env.validation';
       isGlobal: true,
       cache: true,
       // 环境专属文件优先于基础 .env（@nestjs/config 取数组中先出现者）。
-      // 这样 NODE_ENV=nginx 时 .env.nginx 的 OIDC_ISSUER/APP_URL 才能覆盖 .env 的 localhost 值。
+      // NODE_ENV=stage → .env.stage；NODE_ENV=production → .env.production
       envFilePath: [`.env.${process.env.NODE_ENV}`, `.env`],
       load: [appConfig, databaseConfig, redisConfig],
       validationSchema: envValidationSchema,

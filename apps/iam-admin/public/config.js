@@ -1,50 +1,67 @@
-/** iam-client OIDC SSO（按 hostname 自动切换 localhost / Nginx 子域 / NAS） */
+/** iam-client OIDC SSO：按访问环境自动解析，不上线写死域名 */
 (function () {
-  const isLocalHost =
-    location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  const host = location.hostname;
+  const isLocalHost = host === "localhost" || host === "127.0.0.1";
   const cookieSuffix = isLocalHost ? "-" + (location.port || "80") : "";
   window.IAM_APP_COOKIE_KEYS = {
     token: "authorized-token" + cookieSuffix,
     multipleTabs: "multiple-tabs" + cookieSuffix
   };
 
-  const nginx = location.hostname.endsWith(".pinshuai.local");
-  // NAS 局域网：iam-admin 固定走 :9446（admin 容器 Nginx 反代 /api + /oidc）
-  // 不要用 location.origin —— 从 NAS :5000 等其它网关入口打开会误把 OIDC 指到 5000
-  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname);
-  const adminOrigin = isLanIp
-    ? "http://" + location.hostname + ":9446"
-    : null;
+  const SHARED = {
+    clientId: "iam-admin-spa",
+    scopes: "openid profile email",
+    appCode: "iam-admin"
+  };
 
-  window.IAM_CLIENT_CONFIG = nginx
-    ? {
-        iamBaseUrl: "http://api.pinshuai.local",
-        oidcIssuer: "http://auth.pinshuai.local/oidc",
-        clientId: "iam-admin-spa",
-        scopes: "openid profile email",
-        appCode: "iam-admin"
-      }
-    : adminOrigin
-      ? {
-          iamBaseUrl: adminOrigin,
-          oidcIssuer: adminOrigin + "/oidc",
-          clientId: "iam-admin-spa",
-          scopes: "openid profile email",
-          appCode: "iam-admin"
-        }
-      : isLocalHost
-        ? {
-            iamBaseUrl: "http://localhost:3000",
-            oidcIssuer: "http://localhost:3000/oidc",
-            clientId: "iam-admin-spa",
-            scopes: "openid profile email",
-            appCode: "iam-admin"
-          }
-        : {
-            iamBaseUrl: location.origin,
-            oidcIssuer: location.origin + "/oidc",
-            clientId: "iam-admin-spa",
-            scopes: "openid profile email",
-            appCode: "iam-admin"
-          };
+  /**
+   * 子域模式（stage / production 共用）：
+   * admin.<root> → api.<root> + auth.<root>
+   * 例：admin.pinshuai.local / admin.pinshuai.com
+   */
+  function fromSubdomainHost(hostname) {
+    const parts = hostname.split(".");
+    if (parts.length < 3) return null;
+    const root = parts.slice(1).join(".");
+    const protocol = location.protocol;
+    return {
+      iamBaseUrl: protocol + "//api." + root,
+      oidcIssuer: protocol + "//auth." + root + "/oidc",
+      redirectUri: location.origin + "/callback.html",
+      ...SHARED
+    };
+  }
+
+  // NAS 局域网：iam-admin 固定走 :9446（admin 容器 Nginx 反代 /api + /oidc）
+  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(host);
+  if (isLanIp) {
+    const adminOrigin = "http://" + host + ":9446";
+    window.IAM_CLIENT_CONFIG = {
+      iamBaseUrl: adminOrigin,
+      oidcIssuer: adminOrigin + "/oidc",
+      redirectUri: adminOrigin + "/callback.html",
+      ...SHARED
+    };
+    return;
+  }
+
+  if (isLocalHost) {
+    window.IAM_CLIENT_CONFIG = {
+      iamBaseUrl: "http://localhost:3000",
+      oidcIssuer: "http://localhost:3000/oidc",
+      redirectUri:
+        "http://localhost:" + (location.port || "8848") + "/callback.html",
+      ...SHARED
+    };
+    return;
+  }
+
+  // stage（*.pinshuai.local）与 production（正式多级子域）同一套推导
+  window.IAM_CLIENT_CONFIG =
+    fromSubdomainHost(host) || {
+      iamBaseUrl: location.origin,
+      oidcIssuer: location.origin + "/oidc",
+      redirectUri: location.origin + "/callback.html",
+      ...SHARED
+    };
 })();

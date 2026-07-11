@@ -11,9 +11,9 @@
       "problemMatcher": []
     },
     {
-      "label": "iam: start debug (nginx)",
+      "label": "iam: start debug (stage)",
       "type": "shell",
-      "command": "pnpm run start:iam:debug:nginx",
+      "command": "pnpm run start:iam:debug:stage",
       "options": {
         "cwd": "${workspaceFolder}/iam-platform"
       },
@@ -83,7 +83,7 @@
     {
       "label": "dev: start both debug servers",
       "dependsOn": [
-        "iam: start debug (nginx)",
+        "iam: start debug (stage)",
         "flow-admin: start debug (9230)"
       ],
       "dependsOrder": "parallel",

@@ -19,12 +19,23 @@ function resolveClientConfig(): IamClientConfig {
   const isLocalHost =
     location.hostname === "localhost" || location.hostname === "127.0.0.1";
   const nginx = location.hostname.endsWith(".pinshuai.local");
-  const sameOrigin = location.origin;
+  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname);
+  const adminOrigin = isLanIp ? `http://${location.hostname}:9446` : null;
 
   if (nginx) {
     return {
       iamBaseUrl: "http://api.pinshuai.local",
       oidcIssuer: "http://auth.pinshuai.local/oidc",
+      clientId: "iam-admin-spa",
+      redirectUri: "",
+      scopes: "openid profile email",
+      appCode: "iam-admin"
+    };
+  }
+  if (adminOrigin) {
+    return {
+      iamBaseUrl: adminOrigin,
+      oidcIssuer: `${adminOrigin}/oidc`,
       clientId: "iam-admin-spa",
       redirectUri: "",
       scopes: "openid profile email",
@@ -41,10 +52,9 @@ function resolveClientConfig(): IamClientConfig {
       appCode: "iam-admin"
     };
   }
-  // Docker/NAS：admin Nginx 反代 /api 与 /oidc，走当前访问源
   return {
-    iamBaseUrl: sameOrigin,
-    oidcIssuer: `${sameOrigin}/oidc`,
+    iamBaseUrl: location.origin,
+    oidcIssuer: `${location.origin}/oidc`,
     clientId: "iam-admin-spa",
     redirectUri: "",
     scopes: "openid profile email",

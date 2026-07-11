@@ -23,14 +23,18 @@ export function resolveInteractionUiDir(): string {
   }
 
   const fallback = resolveAppPath(APP_NAME, __dirname, ...UI_SEGMENTS);
+  const distRoot = resolveDistRootFrom(__dirname);
   const candidates = isDevelopmentEnv()
     ? [
         resolveAppSrcPath(APP_NAME, ...UI_SEGMENTS),
+        resolveDistAppPath(APP_NAME, 'src', ...UI_SEGMENTS),
         resolveDistAppPath(APP_NAME, ...UI_SEGMENTS),
       ]
     : [
+        // Nest build 将 assets 复制到 dist/apps/iam/src/assets/interaction
+        join(distRoot, 'apps', APP_NAME, 'src', ...UI_SEGMENTS),
         resolveAppPathFrom(APP_NAME, __dirname, ...UI_SEGMENTS),
-        join(resolveDistRootFrom(__dirname), ...UI_SEGMENTS),
+        join(distRoot, ...UI_SEGMENTS),
       ];
 
   return resolveFirstExisting(MARKER_FILE, candidates, fallback);

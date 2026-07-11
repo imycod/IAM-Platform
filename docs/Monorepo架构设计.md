@@ -256,7 +256,7 @@ export abstract class BaseEntity {
 ```dotenv
 # App
 APP_PORT=3000
-APP_ENV=development
+NODE_ENV=development
 APP_URL=http://localhost:3000
 
 # MySQL

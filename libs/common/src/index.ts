@@ -1,5 +1,6 @@
 export * from './utils/id.util';
 export * from './utils/dynamic-import.util';
+export * from './utils/path-resolve.util';
 export * from './dto/pagination.dto';
 export * from './decorators/current-user.decorator';
 export * from './interceptors/transform.interceptor';

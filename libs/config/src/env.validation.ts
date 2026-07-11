@@ -6,7 +6,9 @@ import * as Joi from 'joi';
 export const envValidationSchema = Joi.object({
   // App
   APP_PORT: Joi.number().default(3000),
-  APP_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'test', 'production', 'nginx')
+    .default('development'),
   APP_URL: Joi.string().uri().default('http://localhost:3000'),
   APP_GLOBAL_PREFIX: Joi.string().default('api'),
 

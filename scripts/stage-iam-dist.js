@@ -3,7 +3,7 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const stagedAssets = path.join(root, 'dist', 'assets');
-const appAssets = path.join(root, 'dist', 'apps', 'iam', 'assets');
+const appAssets = path.join(root, 'dist', 'apps', 'iam', 'src', 'assets');
 
 if (!fs.existsSync(stagedAssets)) {
   process.exit(0);

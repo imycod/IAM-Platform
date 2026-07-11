@@ -1,10 +1,34 @@
-根目录：node run.js
-```
--- npm run start:dev // 执行住IAM服务
--- npm run iam-login:dev // 单独的login页面服务 同一SSO（nginx 代理）
--- cd apps/iam-admin 
--- -- npm run dev // IAM admin 管理面板
+详细参阅 docs
 
-```
-主服务: apps/iam
+## 本地开发配置同域名访问
 
+本地开发调试：
+
+```bash
+node run.js
+```
+
+hosts配置后（注意关闭代理）
+
+```bash
+node run-nginx.js
+```
+
+## 发布与部署
+
+```bash
+git fetch --tags
+git checkout v2.0.0
+```
+
+需要做 migration
+
+## Changelogs
+
+v2.0.0 （release）
+
+优化和修复部分bug，解决多client退出、同一SSO状态互串问题，同处于SSO登录页一个client登陆后另个client自动登录，SSO登录后client退出相互不影响。
+
+v1.0.0
+
+完成基本功能， 多业务域模块，基本OIDC、ABAC、RBAC 以及多表设计等。

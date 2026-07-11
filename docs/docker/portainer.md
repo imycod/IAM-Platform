@@ -82,6 +82,11 @@ services:
       REDIS_HOST: redis7
       REDIS_PORT: 6379
       DB_DATABASE: iam
+      # OIDC（与浏览器访问 admin 的地址一致，admin Nginx 反代 /oidc）
+      APP_URL: http://192.168.50.100:9446
+      BETTER_AUTH_URL: http://192.168.50.100:9446
+      OIDC_ISSUER: http://192.168.50.100:9446/oidc
+      OIDC_COOKIE_KEYS: dev-key-1,dev-key-2
     # 按需暴露端口（内部互通不需要端口，仅本地调试可映射）
     ports:
       - "3001:3000"

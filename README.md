@@ -1,13 +1,19 @@
-根目录：node run.js
+## 分支说明
 
-```
--- npm run start:dev // 执行住IAM服务
--- npm run iam-login:dev // 单独的login页面服务 同一SSO（nginx 代理）
--- cd apps/iam-admin
--- -- npm run dev // IAM admin 管理面板
+上线时可用stage分支，并查看 git tag
 
-```
+### stage
 
-主服务: apps/iam
+阶段稳定版本，上线参阅该分支 README.md
 
-初次开发或部署时可先做 migration
+### main
+
+基础架构和功能实现，可用于二次开发，是一个Prototype，不用于同步其它分支
+
+### refactor
+
+用于探索和学习与研究其它更好的实现，不是稳定版本
+
+### pinshuai
+
+不同Org不同实现

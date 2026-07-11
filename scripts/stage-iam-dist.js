@@ -2,13 +2,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const stagedModules = path.join(root, 'dist', 'modules');
-const appModules = path.join(root, 'dist', 'apps', 'iam', 'modules');
+const stagedAssets = path.join(root, 'dist', 'assets');
+const appAssets = path.join(root, 'dist', 'apps', 'iam', 'assets');
 
-if (!fs.existsSync(stagedModules)) {
+if (!fs.existsSync(stagedAssets)) {
   process.exit(0);
 }
 
-fs.mkdirSync(path.dirname(appModules), { recursive: true });
-fs.cpSync(stagedModules, appModules, { recursive: true });
-fs.rmSync(stagedModules, { recursive: true, force: true });
+fs.mkdirSync(path.dirname(appAssets), { recursive: true });
+fs.cpSync(stagedAssets, appAssets, { recursive: true });
+fs.rmSync(stagedAssets, { recursive: true, force: true });

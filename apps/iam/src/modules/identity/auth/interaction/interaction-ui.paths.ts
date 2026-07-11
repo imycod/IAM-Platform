@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const UI_RELATIVE = join('modules', 'identity', 'auth', 'interaction', 'ui');
+const UI_RELATIVE = join('assets', 'interaction');
 
 /** OIDC interaction 登录/consent 静态 UI 根目录（dev / prod 均可解析）。 */
 export function resolveInteractionUiDir(): string {
@@ -11,10 +11,9 @@ export function resolveInteractionUiDir(): string {
   }
 
   const candidates = [
-    join(__dirname, 'ui'),
-    join(process.cwd(), 'dist', 'apps', 'iam', UI_RELATIVE),
-    join(process.cwd(), 'dist', 'apps', 'iam', 'apps', 'iam', 'src', UI_RELATIVE),
     join(process.cwd(), 'apps', 'iam', 'src', UI_RELATIVE),
+    join(process.cwd(), 'dist', 'apps', 'iam', UI_RELATIVE),
+    join(process.cwd(), 'dist', UI_RELATIVE),
   ];
 
   for (const dir of candidates) {
@@ -23,5 +22,5 @@ export function resolveInteractionUiDir(): string {
     }
   }
 
-  return join(__dirname, 'ui');
+  return join(process.cwd(), 'apps', 'iam', 'src', UI_RELATIVE);
 }

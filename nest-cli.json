@@ -19,7 +19,7 @@
         "tsConfigPath": "apps/iam/tsconfig.app.json",
         "assets": [
           {
-            "include": "modules/identity/auth/interaction/ui/**/*",
+            "include": "assets/**/*",
             "watchAssets": true
           }
         ]

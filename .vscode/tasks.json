@@ -2,11 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "flow-admin: build shared",
+      "type": "shell",
+      "command": "pnpm --filter @flow-admin/shared build",
+      "options": {
+        "cwd": "${workspaceFolder}/flow-admin"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "iam: start debug (nginx)",
       "type": "shell",
-      "command": "pnpm run start:debug:nginx",
+      "command": "pnpm run start:iam:debug:nginx",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}/iam-platform"
       },
       "isBackground": true,
       "problemMatcher": {
@@ -20,15 +29,16 @@
       },
       "presentation": {
         "reveal": "always",
-        "panel": "dedicated"
+        "panel": "dedicated",
+        "group": "debug-servers"
       }
     },
     {
       "label": "iam: start debug (development)",
       "type": "shell",
-      "command": "pnpm run start:debug",
+      "command": "pnpm run start:iam:debug",
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}/iam-platform"
       },
       "isBackground": true,
       "problemMatcher": {
@@ -42,8 +52,42 @@
       },
       "presentation": {
         "reveal": "always",
-        "panel": "dedicated"
+        "panel": "dedicated",
+        "group": "debug-servers"
       }
+    },
+    {
+      "label": "flow-admin: start debug (9230)",
+      "type": "shell",
+      "command": "pnpm run start:debug:9230",
+      "dependsOn": ["flow-admin: build shared"],
+      "options": {
+        "cwd": "${workspaceFolder}/flow-admin/backend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": { "regexp": "." },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting compilation",
+          "endsPattern": "Nest application successfully started"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "debug-servers"
+      }
+    },
+    {
+      "label": "dev: start both debug servers",
+      "dependsOn": [
+        "iam: start debug (nginx)",
+        "flow-admin: start debug (9230)"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
     }
   ]
 }

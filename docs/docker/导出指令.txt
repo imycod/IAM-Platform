@@ -1,0 +1,23 @@
+PS C:\Users\Administrator\Desktop\workspace> docker images
+                                                                                                   i Info →   U  In Use
+IMAGE                        ID             DISK USAGE   CONTENT SIZE   EXTRA
+alpine:latest                28bd5fe8b56d         13MB         3.93MB
+auto-vi:latest               1a2a08a08bd2        509MB          106MB
+flow-admin-backend:latest    60f4c95117b9        1.5GB          259MB    U
+flow-admin-frontend:latest   7ce0f3b8c715       79.6MB         22.3MB    U
+iam-platform-admin:latest    b4252644ca0b       77.3MB         21.8MB    U
+iam-platform-iam:latest      cca0b1075652        541MB         96.9MB    U
+mysql:8.4                    d36d39a64cd1       1.12GB          255MB    U
+nginx:1.27-alpine            65645c7bb6a0       74.5MB         21.9MB    U
+redis:7.4                    b2b95679e3b4        170MB           46MB    U
+redis:7.4-alpine             6ab0b6e73817       57.8MB         16.8MB    U
+vi-admin:latest              11fb567274be       95.2MB         26.6MB
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\flow-admin-backend-latest.tar 60f4c95117b9
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\flow-admin-frontend-latest.tar 7ce0f3b8c715
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\iam-platform-admin-latest.tar b4252644ca0b
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\iam-platform-iam-latest.tar cca0b1075652
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\mysql-8.4.tar d36d39a64cd1
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\nginx:1.27-alpine.tar 65645c7bb6a0
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\redis:7.4.tar b2b95679e3b4
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\nginx-1.27-alpine.tar 65645c7bb6a0
+PS C:\Users\Administrator\Desktop\workspace> docker save -o $HOME\Desktop\redis-7.4.tar b2b95679e3b4

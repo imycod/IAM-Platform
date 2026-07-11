@@ -21,12 +21,16 @@
 ## 2. 启动基础设施
 
 ```powershell
-# MySQL + Redis
+# MySQL + Redis + IAM（Docker 全栈）
 cd IAM-Platform
-docker compose up -d
+cp .env.docker.example .env.docker
+docker compose --env-file .env.docker up -d --build
 
-# Nginx 网关（在项目根目录或 deploy 目录均可）
-docker compose -f deploy/docker-compose.nginx.yaml up -d
+# 仅基础设施
+docker compose --env-file .env.docker up -d mysql redis
+
+# Nginx 子域网关（IAM 在容器内）
+docker compose --env-file .env.docker --profile gateway up -d
 ```
 
 ## 3. 启动应用（宿主机）

@@ -1,7 +1,18 @@
 import 'dotenv/config';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
+
+/** Docker / 生产构建后 migration 在 dist 下，开发时在源码树。 */
+const useDist = existsSync(join(process.cwd(), 'dist/apps/iam/src/database/migrations'));
+const entityGlob = useDist
+  ? 'dist/apps/iam/src/**/*.entity.js'
+  : 'apps/iam/src/**/*.entity.{ts,js}';
+const migrationGlob = useDist
+  ? 'dist/apps/iam/src/database/migrations/*.js'
+  : 'apps/iam/src/database/migrations/*.{ts,js}';
 
 /**
  * 仅供 TypeORM CLI 使用（migration:generate / run / revert）。
@@ -18,6 +29,6 @@ export default new DataSource({
   timezone: 'Z',
   namingStrategy: new SnakeNamingStrategy(),
   synchronize: false,
-  entities: ['apps/iam/src/**/*.entity.{ts,js}'],
-  migrations: ['apps/iam/src/database/migrations/*.{ts,js}'],
+  entities: [entityGlob],
+  migrations: [migrationGlob],
 });

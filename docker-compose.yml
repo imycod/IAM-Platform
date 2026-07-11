@@ -1,0 +1,107 @@
+# iam-platform 一键部署：MySQL + Redis + IAM（可选 Nginx 子域网关）
+#
+# 启动：
+#   cp .env.docker.example .env.docker
+#   docker compose --env-file .env.docker up -d --build
+#
+# 子域模拟（需 hosts 配置 *.pinshuai.local → 127.0.0.1）：
+#   docker compose --env-file .env.docker --profile gateway up -d --build
+#
+# 访问：
+#   直连 http://localhost:3000/api/health
+#   网关 http://auth.pinshuai.local  /  http://api.pinshuai.local/api
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: iam-platform-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-iam}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-3308}:3306"
+    volumes:
+      - iam_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: iam-platform-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PUBLISH_PORT:-6380}:6379"
+    volumes:
+      - iam_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  iam:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iam-platform-iam
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      NODE_ENV: production
+      APP_PORT: ${APP_PORT:-3000}
+      APP_GLOBAL_PREFIX: api
+      IAM_INTERACTION_UI_DIR: /app/dist/apps/iam/src/assets/interaction
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-123456}
+      DB_DATABASE: ${DB_DATABASE:-iam}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "${IAM_PUBLISH_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  nginx:
+    profiles: ["gateway"]
+    image: nginx:1.27-alpine
+    container_name: iam-platform-nginx
+    restart: unless-stopped
+    depends_on:
+      iam:
+        condition: service_healthy
+    ports:
+      - "${NGINX_PUBLISH_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx/conf.d/iam.docker.conf:/etc/nginx/conf.d/default.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  iam_mysql_data:
+  iam_redis_data:

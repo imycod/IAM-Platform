@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.git
+**/.idea
+**/.vscode
+**/*.log
+**/.env
+**/.env.local
+**/.env.*.local
+**/coverage
+**/test
+**/*.spec.ts
+apps/iam-admin

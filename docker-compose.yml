@@ -1,4 +1,4 @@
-# iam-platform 一键部署：MySQL + Redis + IAM（可选 Nginx 子域网关）
+# iam-platform 一键部署：MySQL + Redis + IAM + iam-admin（可选 Nginx 子域网关）
 #
 # 启动：
 #   cp .env.docker.example .env.docker
@@ -8,8 +8,9 @@
 #   docker compose --env-file .env.docker --profile gateway up -d --build
 #
 # 访问：
-#   直连 http://localhost:3000/api/health
-#   网关 http://auth.pinshuai.local  /  http://api.pinshuai.local/api
+#   IAM API   http://localhost:3000/api/health
+#   iam-admin http://localhost:8848
+#   网关      http://auth.pinshuai.local / http://api.pinshuai.local / http://admin.pinshuai.local
 
 services:
   mysql:
@@ -51,6 +52,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     container_name: iam-platform-iam
     restart: unless-stopped
     depends_on:
@@ -87,6 +89,19 @@ services:
       retries: 5
       start_period: 90s
 
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: admin
+    container_name: iam-platform-admin
+    restart: unless-stopped
+    depends_on:
+      iam:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_PUBLISH_PORT:-8848}:80"
+
   nginx:
     profiles: ["gateway"]
     image: nginx:1.27-alpine
@@ -95,11 +110,14 @@ services:
     depends_on:
       iam:
         condition: service_healthy
+      admin:
+        condition: service_started
     ports:
       - "${NGINX_PUBLISH_PORT:-80}:80"
     volumes:
       - ./deploy/nginx/conf.d/iam.docker.conf:/etc/nginx/conf.d/default.conf:ro
     extra_hosts:
+      # flow-admin 仍在独立 compose，走宿主机端口
       - "host.docker.internal:host-gateway"
 
 volumes:

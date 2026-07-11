@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build:iam": "nest build iam && node scripts/stage-iam-dist.js",
+    "build:iam-admin": "npm run build --prefix apps/iam-admin",
     "start:iam": "nest start iam",
     "start:iam:dev": "cross-env NODE_ENV=development nest start iam --watch",
     "start:iam:prod": "cross-env NODE_ENV=production node dist/apps/iam/src/main",

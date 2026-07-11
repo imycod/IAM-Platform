@@ -10,4 +10,5 @@
 **/coverage
 **/test
 **/*.spec.ts
-apps/iam-admin
+apps/iam-admin/node_modules
+apps/iam-admin/dist

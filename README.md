@@ -24,6 +24,53 @@ git checkout v2.0.0
 
 需要做 migration
 
+## Portainer Stack Details
+```yaml
+# iam-compose.yml 业务应用栈
+networks:
+  app-net:
+    external:
+      name: infra_app-net  # 关键！完整网络名=栈名_网络名
+
+services:
+  # 后端1：iam-platform-iam
+  iam:
+    image: iam-platform-iam:latest
+    container_name: iam-platform-iam
+    restart: unless-stopped
+    networks:
+      - app-net
+    environment:
+      # 同网络直接用容器名访问基础设施
+      DB_HOST: mysql8
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: 123456
+      REDIS_HOST: redis7
+      REDIS_PORT: 6379
+      DB_DATABASE: iam
+      OIDC_ISSUER: http://192.168.50.100:9446/oidc
+      APP_URL: http://192.168.50.100:9446
+      BETTER_AUTH_URL: http://192.168.50.100:9446
+      OIDC_COOKIE_KEYS: dev-key-1,dev-key-2
+      CORS_ORIGINS: http://192.168.50.100:9445
+      IAM_INTERACTION_UI_DIR: /app/dist/apps/iam/src/assets/interaction
+    # 按需暴露端口（内部互通不需要端口，仅本地调试可映射）
+    ports:
+      - "3001:3000"
+
+  # 前端1：iam-platform-admin
+  iam-platform-admin:
+    image: iam-platform-admin:latest
+    container_name: iam-platform-admin
+    restart: unless-stopped
+    networks:
+      - app-net
+    ports:
+      - "9446:80"
+
+```
+
 ## Changelogs
 
 v2.0.0 （release）

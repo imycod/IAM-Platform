@@ -45,6 +45,18 @@ async function bootstrap(): Promise<void> {
       // ignore invalid APP_URL
     }
   }
+  const extraOrigins = config.get<string>('CORS_ORIGINS');
+  if (extraOrigins) {
+    for (const raw of extraOrigins.split(',')) {
+      const origin = raw.trim();
+      if (!origin) continue;
+      try {
+        corsOrigins.add(new URL(origin).origin);
+      } catch {
+        Logger.warn(`忽略无效 CORS_ORIGINS 项: ${origin}`, 'Bootstrap');
+      }
+    }
+  }
   app.enableCors({
     origin: [...corsOrigins],
     credentials: true,

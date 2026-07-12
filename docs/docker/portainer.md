@@ -85,6 +85,8 @@ services:
       OIDC_ISSUER: http://192.168.50.100:9446/oidc
       APP_URL: http://192.168.50.100:9446
       BETTER_AUTH_URL: http://192.168.50.100:9446
+      # flow-admin 等其它 SPA 跨域换 token / SSO 探测
+      CORS_ORIGINS: http://192.168.50.100:9445
       OIDC_COOKIE_KEYS: dev-key-1,dev-key-2
       IAM_INTERACTION_UI_DIR: /app/dist/apps/iam/src/assets/interaction
     # 按需暴露端口（内部互通不需要端口，仅本地调试可映射）

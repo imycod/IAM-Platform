@@ -10,6 +10,8 @@ export const envValidationSchema = Joi.object({
     .valid('development', 'test', 'stage', 'production')
     .default('development'),
   APP_URL: Joi.string().uri().default('http://localhost:3000'),
+  /** 额外 CORS 来源，逗号分隔（如其它 SPA：flow-admin :9445） */
+  CORS_ORIGINS: Joi.string().optional(),
   APP_GLOBAL_PREFIX: Joi.string().default('api'),
 
   // MySQL

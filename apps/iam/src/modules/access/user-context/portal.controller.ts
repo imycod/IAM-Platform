@@ -71,7 +71,12 @@ export class PortalController {
     return app;
   }
 
-  private async buildPortalUserData(userId: string, app: ApplicationEntity, accessToken: string, refreshToken?: string) {
+  private async buildPortalUserData(
+    userId: string,
+    app: ApplicationEntity,
+    accessToken: string,
+    refreshToken?: string,
+  ) {
     await this.applicationService.assertUserCanAccess(app.id, userId);
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) {
@@ -150,4 +155,3 @@ export class PortalController {
     return { success: true, data: this.portalMenuService.toPureAdminRoutes(menus) };
   }
 }
-

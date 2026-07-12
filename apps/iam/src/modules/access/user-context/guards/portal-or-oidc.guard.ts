@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../../../identity/auth/services/auth.service';
 import { OidcService } from '../../../security/oidc/services/oidc.service';
 

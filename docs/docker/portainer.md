@@ -82,9 +82,9 @@ services:
       REDIS_HOST: redis7
       REDIS_PORT: 6379
       DB_DATABASE: iam
-      OIDC_ISSUER: http://192.168.50.100:3001/oidc
-      APP_URL: http://192.168.50.100:3001
-      BETTER_AUTH_URL: http://192.168.50.100:3001
+      OIDC_ISSUER: http://192.168.50.100:9446/oidc
+      APP_URL: http://192.168.50.100:9446
+      BETTER_AUTH_URL: http://192.168.50.100:9446
       OIDC_COOKIE_KEYS: dev-key-1,dev-key-2
       IAM_INTERACTION_UI_DIR: /app/dist/apps/iam/src/assets/interaction
     # 按需暴露端口（内部互通不需要端口，仅本地调试可映射）
@@ -100,6 +100,5 @@ services:
       - app-net
     ports:
       - "9446:80"
-
 
 ```

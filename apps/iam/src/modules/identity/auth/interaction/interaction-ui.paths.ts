@@ -17,7 +17,6 @@ const MARKER_FILE = 'login.html';
 /** OIDC interaction 登录/consent 静态 UI 根目录（dev / prod 均可解析）。 */
 export function resolveInteractionUiDir(): string {
   const fromEnv = process.env.IAM_INTERACTION_UI_DIR?.trim();
-
   if (fromEnv && existsSync(join(fromEnv, MARKER_FILE))) {
     return fromEnv;
   }

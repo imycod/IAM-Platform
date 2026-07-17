@@ -83,6 +83,12 @@ const columns: TableColumnList = [
       applicationCode ? `${clientName}（${applicationCode}）` : (clientName ?? "-")
   },
   {
+    label: "访问授权",
+    prop: "accessStatus",
+    width: 110,
+    slot: "accessStatus"
+  },
+  {
     label: "Token",
     minWidth: 140,
     formatter: ({ tokenPreview }) => tokenPreview ?? "-"
@@ -201,7 +207,7 @@ onMounted(onSearch);
       :closable="false"
       show-icon
       class="mx-8 mt-3 mb-0"
-      title="会话中心聚合门户账密会话与 OIDC SSO/访问令牌。踢下线会吊销服务端会话，用户下次请求需重新登录。"
+      title="会话中心聚合门户账密会话与 OIDC SSO/访问令牌。访问授权按当前 application_user 判定：allow 可进门，deny 无权访问该客户端对应应用。踢下线会吊销服务端会话，用户下次请求需重新登录。"
     />
 
     <el-form :inline="true" class="search-form bg-bg_color w-full pl-8 pt-[12px] overflow-auto">
@@ -258,6 +264,25 @@ onMounted(onSearch);
           :data="dataList"
           :columns="dynamicColumns"
         >
+          <template #accessStatus="{ row }">
+            <el-tag
+              v-if="row.accessStatus === 'allow'"
+              type="success"
+              size="small"
+              effect="plain"
+            >
+              allow
+            </el-tag>
+            <el-tag
+              v-else-if="row.accessStatus === 'deny'"
+              type="danger"
+              size="small"
+              effect="plain"
+            >
+              deny
+            </el-tag>
+            <span v-else>-</span>
+          </template>
           <template #activeStatus="{ row }">
             <span
               class="session-status"

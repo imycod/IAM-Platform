@@ -21,8 +21,10 @@ import {
   mergeOidcTokenRefresh,
   performGlobalLogout,
   revokeCurrentOidcAccessToken,
+  revokeCurrentPortalSession,
   skipAutoSso
 } from "@/utils/oidc";
+import { getToken } from "@/utils/auth";
 import {
   clearLoginMethod,
   isSsoSession,
@@ -94,8 +96,11 @@ export const useUserStore = defineStore("pure-user", {
     },
     /** 本地登出：仅清本应用 token，保留 IdP SSO 会话 */
     async logOutLocal() {
+      const sessionToken = getToken()?.refreshToken;
       if (isSsoSession()) {
         await revokeCurrentOidcAccessToken();
+      } else if (sessionToken) {
+        await revokeCurrentPortalSession(sessionToken);
       }
       skipAutoSso();
       clearLoginMethod();

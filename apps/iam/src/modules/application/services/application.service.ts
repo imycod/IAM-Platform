@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Brackets } from 'typeorm';
 import { ApplicationEntity } from '../application/entities/application.entity';
 import { ApplicationUserEntity } from '../application-user/entities/application-user.entity';
 import { UpdateApplicationDto } from '../dto/update-application.dto';
@@ -63,6 +63,46 @@ export class ApplicationService {
       where: { applicationId, userId, status: 'active' },
     });
     return !!row;
+  }
+
+  /** 批量查询活跃的 application_user，返回 `${applicationId}:${userId}` 集合。 */
+  async findActiveUserApplicationKeys(
+    pairs: Array<{ applicationId: string; userId: string }>,
+  ): Promise<Set<string>> {
+    const unique = new Map<string, { applicationId: string; userId: string }>();
+    for (const pair of pairs) {
+      if (!pair.applicationId || !pair.userId) {
+        continue;
+      }
+      unique.set(`${pair.applicationId}:${pair.userId}`, pair);
+    }
+    if (!unique.size) {
+      return new Set();
+    }
+
+    const list = [...unique.values()];
+    const qb = this.appUserRepo.createQueryBuilder('au').where('au.status = :status', {
+      status: 'active',
+    });
+    qb.andWhere(
+      new Brackets((sub) => {
+        list.forEach((pair, index) => {
+          const clause = `(au.applicationId = :appId${index} AND au.userId = :userId${index})`;
+          const params = {
+            [`appId${index}`]: pair.applicationId,
+            [`userId${index}`]: pair.userId,
+          };
+          if (index === 0) {
+            sub.where(clause, params);
+          } else {
+            sub.orWhere(clause, params);
+          }
+        });
+      }),
+    );
+
+    const rows = await qb.getMany();
+    return new Set(rows.map((row) => `${row.applicationId}:${row.userId}`));
   }
 
   /** 进门校验，不通过则 403。 */

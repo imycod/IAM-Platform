@@ -7,6 +7,8 @@ export type UnifiedSessionKind =
   | "oidc_sso"
   | "oidc_access_token";
 
+export type SessionClientAccessStatus = "allow" | "deny";
+
 export interface UnifiedSessionItem {
   id: string;
   kind: UnifiedSessionKind;
@@ -23,6 +25,8 @@ export interface UnifiedSessionItem {
   tokenPreview: string | null;
   /** 未过期且服务端仍存在 → 活跃 */
   active: boolean;
+  /** 当前是否具备该应用/客户端的 application_user 进门资格 */
+  accessStatus: SessionClientAccessStatus | null;
 }
 
 /** @deprecated 使用 UnifiedSessionItem */

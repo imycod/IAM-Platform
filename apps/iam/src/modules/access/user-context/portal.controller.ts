@@ -27,6 +27,7 @@ import type { VisibleMenuNode } from './user-context.service';
 import { AuthSessionSettingsService } from '../../system/auth-session/auth-session-settings.service';
 import { PortalTokenRefreshService } from './portal-token-refresh.service';
 import { PortalRefreshTokenDto } from './dto/portal-refresh-token.dto';
+import { PortalLogoutDto } from './dto/portal-logout.dto';
 
 interface AuthedRequest extends Request {
   user: { id: string };
@@ -151,6 +152,13 @@ export class PortalController {
   async refreshToken(@Body() dto: PortalRefreshTokenDto) {
     const data = await this.portalTokenRefresh.refresh(dto.refreshToken, dto.appCode);
     return { success: true, data };
+  }
+
+  /** 账密本地退出：吊销门户 session，不销毁 IdP SSO 会话 */
+  @Post('logout')
+  async logout(@Body() dto: PortalLogoutDto) {
+    await this.authService.logout(dto.refreshToken);
+    return { success: true };
   }
 
   /** 动态路由（OIDC access_token 或 portal session 均可） */

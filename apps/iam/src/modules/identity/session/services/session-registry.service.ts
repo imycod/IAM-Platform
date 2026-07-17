@@ -8,6 +8,8 @@ import { UnifiedSessionKind } from '../session-kind.enum';
 import { QuerySessionDto } from '../dto/query-session.dto';
 import { SessionService } from './session.service';
 
+export type SessionClientAccessStatus = 'allow' | 'deny';
+
 export interface UnifiedSessionItem {
   id: string;
   kind: UnifiedSessionKind;
@@ -24,6 +26,8 @@ export interface UnifiedSessionItem {
   tokenPreview: string | null;
   /** 未过期且仍存在于服务端，视为活跃 */
   active: boolean;
+  /** 当前用户是否具备该应用/客户端的 application_user 进门资格 */
+  accessStatus: SessionClientAccessStatus | null;
 }
 
 export interface QuerySessionRegistryParams {
@@ -50,6 +54,7 @@ export class SessionRegistryService {
     const appMap = await this.buildApplicationMap();
 
     const items: UnifiedSessionItem[] = [];
+    const accessChecks: Array<{ item: UnifiedSessionItem; applicationId: string }> = [];
 
     if (!query.kind || query.kind === UnifiedSessionKind.PORTAL_PASSWORD) {
       const portalQuery = Object.assign(new QuerySessionDto(), {
@@ -60,7 +65,7 @@ export class SessionRegistryService {
       const portal = await this.sessionService.findMany(portalQuery);
       for (const row of portal.items) {
         const appMeta = row.applicationId ? appMap.get(row.applicationId) : undefined;
-        items.push({
+        const item: UnifiedSessionItem = {
           id: row.id,
           kind: UnifiedSessionKind.PORTAL_PASSWORD,
           userId: row.userId,
@@ -75,7 +80,12 @@ export class SessionRegistryService {
           createdAt: row.createdAt?.toISOString() ?? null,
           tokenPreview: row.token ? `${row.token.slice(0, 12)}...` : null,
           active: this.isSessionActive(row.expiresAt),
-        });
+          accessStatus: null,
+        };
+        items.push(item);
+        if (row.applicationId && row.userId) {
+          accessChecks.push({ item, applicationId: row.applicationId });
+        }
       }
     }
 
@@ -94,7 +104,7 @@ export class SessionRegistryService {
           continue;
         }
         const clientMeta = row.clientId ? clientMap.get(row.clientId) : undefined;
-        items.push({
+        const item: UnifiedSessionItem = {
           id: row.id,
           kind,
           userId: row.accountId,
@@ -109,10 +119,16 @@ export class SessionRegistryService {
           createdAt: null,
           tokenPreview: `${row.id.slice(0, 12)}...`,
           active: this.isSessionActive(row.expiresAt),
-        });
+          accessStatus: null,
+        };
+        items.push(item);
+        if (row.accountId && clientMeta?.applicationId) {
+          accessChecks.push({ item, applicationId: clientMeta.applicationId });
+        }
       }
     }
 
+    await this.enrichClientAccessStatus(accessChecks);
     await this.enrichUserBriefs(items);
 
     items.sort((a, b) => {
@@ -203,6 +219,26 @@ export class SessionRegistryService {
     return expiresAt.getTime() > Date.now();
   }
 
+  private async enrichClientAccessStatus(
+    checks: Array<{ item: UnifiedSessionItem; applicationId: string }>,
+  ): Promise<void> {
+    if (!checks.length) {
+      return;
+    }
+
+    const allowedKeys = await this.applicationService.findActiveUserApplicationKeys(
+      checks.map(({ item, applicationId }) => ({
+        applicationId,
+        userId: item.userId as string,
+      })),
+    );
+
+    for (const { item, applicationId } of checks) {
+      const key = `${applicationId}:${item.userId}`;
+      item.accessStatus = allowedKeys.has(key) ? 'allow' : 'deny';
+    }
+  }
+
   private async enrichUserBriefs(items: UnifiedSessionItem[]): Promise<void> {
     const missingIds = [
       ...new Set(
@@ -237,19 +273,23 @@ export class SessionRegistryService {
   }
 
   private async buildClientMap(): Promise<
-    Map<string, { name: string; applicationCode: string | null }>
+    Map<string, { name: string; applicationCode: string | null; applicationId: string }>
   > {
     const [clients, apps] = await Promise.all([
       this.oauthClientService.findAll(),
       this.applicationService.findAll(),
     ]);
     const appById = new Map(apps.map((app) => [app.id, app]));
-    const map = new Map<string, { name: string; applicationCode: string | null }>();
+    const map = new Map<
+      string,
+      { name: string; applicationCode: string | null; applicationId: string }
+    >();
     for (const client of clients) {
       const app = appById.get(client.applicationId);
       map.set(client.clientId, {
         name: app?.name ?? client.clientId,
         applicationCode: app?.code ?? null,
+        applicationId: client.applicationId,
       });
     }
     return map;

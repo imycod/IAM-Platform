@@ -288,6 +288,29 @@ export async function revokeCurrentOidcAccessToken(
   }
 }
 
+/** 吊销账密门户 session，保留 IdP SSO Session（业务系统本地退出） */
+export async function revokeCurrentPortalSession(
+  refreshToken: string,
+  cfg: IamClientConfig = IAM_CLIENT_CONFIG
+): Promise<void> {
+  const token = refreshToken.trim();
+  if (!token) {
+    return;
+  }
+  try {
+    await fetch(`${cfg.iamBaseUrl.replace(/\/$/, "")}/api/portal/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        refreshToken: token,
+        appCode: cfg.appCode
+      })
+    });
+  } catch {
+    // 本地已清 token 即可，吊销失败不阻塞退出
+  }
+}
+
 /** SSO 无感刷新后同步 localStorage 中的 OIDC token 包（供全局登出等使用） */
 export function mergeOidcTokenRefresh(payload: {
   access_token: string;

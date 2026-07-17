@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, HttpException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -396,6 +396,7 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
 
   /**
    * OIDC 授权成功（含静默 SSO：已有 IAM 会话 cookie 时不会经过 interaction 登录页）。
+   * 进门资格以 application_user 为准；无权限时记失败审计，不更新 lastLoginAt。
    */
   private async recordSsoAuthorizationSuccess(ctx: OidcAuthorizationContext): Promise<void> {
     const accountId = ctx.oidc?.session?.accountId;
@@ -406,48 +407,135 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
     const req = ctx.req;
     try {
       const sessionId = ctx.oidc?.session?.id;
+      const clientId = ctx.oidc?.client?.clientId ?? null;
       if (sessionId) {
         await this.stampOidcPayloadMeta('Session', sessionId, {
           loginIp: req?.ip ?? null,
           loginUserAgent: req?.headers?.['user-agent'] ?? null,
-          clientId: ctx.oidc?.client?.clientId ?? null,
+          clientId,
         });
       }
 
-      const user = await this.userRepo.findOne({ where: { id: accountId } });
-      const clientId = ctx.oidc?.client?.clientId ?? null;
-      let applicationId: string | null = null;
-      let applicationCode: string | null = null;
-      let applicationName: string | null = null;
-      if (clientId) {
-        const oauthClient = await this.oauthClientService.findByClientId(clientId);
-        if (oauthClient) {
-          applicationId = oauthClient.applicationId;
-          try {
-            const app = await this.applicationService.findOne(oauthClient.applicationId);
-            applicationCode = app.code;
-            applicationName = app.name;
-          } catch {
-            // 应用可能已删除，仍保留 clientId
-          }
+      const appMeta = await this.resolveClientApplicationMeta(clientId);
+      if (appMeta.applicationId) {
+        const allowed = await this.applicationService.canUserAccess(
+          appMeta.applicationId,
+          accountId,
+        );
+        if (!allowed) {
+          await this.recordSsoLoginHistory({
+            success: false,
+            accountId,
+            clientId,
+            ...appMeta,
+            req,
+            failReason: '无权访问该应用，请联系管理员开通 application_user',
+          });
+          return;
         }
       }
 
-      await this.loginHistoryService.record({
+      await this.recordSsoLoginHistory({
         success: true,
-        userId: accountId,
-        identifier: user?.email ?? accountId,
-        loginType: LoginType.SSO,
-        ip: req?.ip ?? null,
-        userAgent: req?.headers?.['user-agent'] ?? null,
+        accountId,
         clientId,
-        applicationId,
-        applicationCode,
-        applicationName,
+        ...appMeta,
+        req,
       });
-      await this.userRepo.update(accountId, { lastLoginAt: new Date() });
     } catch (error) {
       this.logger.warn(`SSO 登录审计写入失败: ${String(error)}`);
+    }
+  }
+
+  private async resolveClientApplicationMeta(clientId: string | null): Promise<{
+    applicationId: string | null;
+    applicationCode: string | null;
+    applicationName: string | null;
+  }> {
+    if (!clientId) {
+      return { applicationId: null, applicationCode: null, applicationName: null };
+    }
+    const oauthClient = await this.oauthClientService.findByClientId(clientId);
+    if (!oauthClient) {
+      return { applicationId: null, applicationCode: null, applicationName: null };
+    }
+    try {
+      const app = await this.applicationService.findOne(oauthClient.applicationId);
+      return {
+        applicationId: oauthClient.applicationId,
+        applicationCode: app.code,
+        applicationName: app.name,
+      };
+    } catch {
+      return {
+        applicationId: oauthClient.applicationId,
+        applicationCode: null,
+        applicationName: null,
+      };
+    }
+  }
+
+  private resolveSsoFailReason(error: unknown): string {
+    if (error instanceof ForbiddenException) {
+      return error.message;
+    }
+    if (error instanceof HttpException) {
+      const msg = error.message;
+      return typeof msg === 'string' && msg.length > 0 ? msg : '登录失败';
+    }
+    return '登录失败';
+  }
+
+  private async recordSsoLoginHistory(params: {
+    success: boolean;
+    accountId: string;
+    clientId: string | null;
+    applicationId: string | null;
+    applicationCode: string | null;
+    applicationName: string | null;
+    req?: Request;
+    failReason?: string | null;
+  }): Promise<void> {
+    const user = await this.userRepo.findOne({ where: { id: params.accountId } });
+    await this.loginHistoryService.record({
+      success: params.success,
+      userId: params.accountId,
+      identifier: user?.email ?? params.accountId,
+      loginType: LoginType.SSO,
+      ip: params.req?.ip ?? null,
+      userAgent: params.req?.headers?.['user-agent'] ?? null,
+      clientId: params.clientId,
+      applicationId: params.applicationId,
+      applicationCode: params.applicationCode,
+      applicationName: params.applicationName,
+      failReason: params.failReason ?? null,
+    });
+    if (params.success) {
+      await this.userRepo.update(params.accountId, { lastLoginAt: new Date() });
+    }
+  }
+
+  private async recordSsoApplicationAccessDenied(
+    accountId: string,
+    clientId: string | undefined,
+    applicationId: string,
+    req: unknown,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      const appMeta = await this.resolveClientApplicationMeta(clientId ?? null);
+      await this.recordSsoLoginHistory({
+        success: false,
+        accountId,
+        clientId: clientId ?? null,
+        applicationId: appMeta.applicationId ?? applicationId,
+        applicationCode: appMeta.applicationCode,
+        applicationName: appMeta.applicationName,
+        req: req as Request | undefined,
+        failReason: this.resolveSsoFailReason(error),
+      });
+    } catch (auditError) {
+      this.logger.warn(`SSO 进门失败审计写入失败: ${String(auditError)}`);
     }
   }
 
@@ -541,10 +629,21 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
     if (clientId) {
       const oauthClient = await this.oauthClientService.findByClientId(clientId);
       if (oauthClient?.applicationId) {
-        await this.applicationService.assertUserCanAccess(
-          oauthClient.applicationId,
-          result.accountId,
-        );
+        try {
+          await this.applicationService.assertUserCanAccess(
+            oauthClient.applicationId,
+            result.accountId,
+          );
+        } catch (error) {
+          await this.recordSsoApplicationAccessDenied(
+            result.accountId,
+            clientId,
+            oauthClient.applicationId,
+            req,
+            error,
+          );
+          throw error;
+        }
       }
     }
 
@@ -583,7 +682,18 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
 
     const oauthClient = await this.oauthClientService.findByClientId(clientId);
     if (oauthClient?.applicationId) {
-      await this.applicationService.assertUserCanAccess(oauthClient.applicationId, accountId);
+      try {
+        await this.applicationService.assertUserCanAccess(oauthClient.applicationId, accountId);
+      } catch (error) {
+        await this.recordSsoApplicationAccessDenied(
+          accountId,
+          clientId,
+          oauthClient.applicationId,
+          req,
+          error,
+        );
+        throw error;
+      }
     }
 
     const grant = new provider.Grant({ accountId, clientId });

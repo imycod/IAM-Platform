@@ -22,6 +22,8 @@ export interface UnifiedSessionItem {
   expiresAt: string | null;
   createdAt: string | null;
   tokenPreview: string | null;
+  /** 未过期且仍存在于服务端，视为活跃 */
+  active: boolean;
 }
 
 export interface QuerySessionRegistryParams {
@@ -72,6 +74,7 @@ export class SessionRegistryService {
           expiresAt: row.expiresAt?.toISOString() ?? null,
           createdAt: row.createdAt?.toISOString() ?? null,
           tokenPreview: row.token ? `${row.token.slice(0, 12)}...` : null,
+          active: this.isSessionActive(row.expiresAt),
         });
       }
     }
@@ -105,6 +108,7 @@ export class SessionRegistryService {
           expiresAt: row.expiresAt?.toISOString() ?? null,
           createdAt: null,
           tokenPreview: `${row.id.slice(0, 12)}...`,
+          active: this.isSessionActive(row.expiresAt),
         });
       }
     }
@@ -190,6 +194,13 @@ export class SessionRegistryService {
     }
 
     return { revoked };
+  }
+
+  private isSessionActive(expiresAt: Date | null): boolean {
+    if (!expiresAt) {
+      return true;
+    }
+    return expiresAt.getTime() > Date.now();
   }
 
   private async enrichUserBriefs(items: UnifiedSessionItem[]): Promise<void> {

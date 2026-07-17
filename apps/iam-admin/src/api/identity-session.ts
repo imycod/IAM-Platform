@@ -21,6 +21,8 @@ export interface UnifiedSessionItem {
   expiresAt: string | null;
   createdAt: string | null;
   tokenPreview: string | null;
+  /** 未过期且服务端仍存在 → 活跃 */
+  active: boolean;
 }
 
 /** @deprecated 使用 UnifiedSessionItem */

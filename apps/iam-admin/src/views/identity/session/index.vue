@@ -32,6 +32,12 @@ const kindLabelMap: Record<UnifiedSessionKind, string> = {
   oidc_access_token: "OIDC 访问令牌"
 };
 
+function resolveRowActive(row: UnifiedSessionItem): boolean {
+  if (typeof row.active === "boolean") return row.active;
+  if (!row.expiresAt) return true;
+  return Date.parse(row.expiresAt) > Date.now();
+}
+
 function formatLoginUser(row: UnifiedSessionItem): string {
   const { userName, userEmail, userId } = row;
   if (userName && userEmail) return `${userName}（${userEmail}）`;
@@ -47,6 +53,12 @@ const filters = reactive({
 });
 
 const columns: TableColumnList = [
+  {
+    label: "状态",
+    prop: "active",
+    width: 100,
+    slot: "activeStatus"
+  },
   {
     label: "类型",
     prop: "kind",
@@ -246,8 +258,28 @@ onMounted(onSearch);
           :data="dataList"
           :columns="dynamicColumns"
         >
+          <template #activeStatus="{ row }">
+            <span
+              class="session-status"
+              :class="
+                resolveRowActive(row)
+                  ? 'session-status--active'
+                  : 'session-status--offline'
+              "
+            >
+              <span class="session-status__dot" aria-hidden="true" />
+              {{ resolveRowActive(row) ? "活跃" : "已下线" }}
+            </span>
+          </template>
           <template #operation="{ row }">
-            <el-button link type="danger" @click="handleRevoke(row)">踢下线</el-button>
+            <el-button
+              link
+              type="danger"
+              :disabled="!resolveRowActive(row)"
+              @click="handleRevoke(row)"
+            >
+              踢下线
+            </el-button>
           </template>
         </pure-table>
       </template>
@@ -259,6 +291,38 @@ onMounted(onSearch);
 .main {
   :deep(.el-dropdown-menu__item i) {
     margin: 0;
+  }
+}
+
+.session-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.session-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.session-status--active {
+  color: var(--el-color-success);
+
+  .session-status__dot {
+    background: var(--el-color-success);
+    box-shadow: 0 0 0 2px rgb(103 194 58 / 25%);
+  }
+}
+
+.session-status--offline {
+  color: var(--el-color-danger);
+
+  .session-status__dot {
+    background: var(--el-color-danger);
+    box-shadow: 0 0 0 2px rgb(245 108 108 / 25%);
   }
 }
 </style>

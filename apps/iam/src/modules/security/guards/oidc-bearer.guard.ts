@@ -1,4 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { createAuthSessionTerminatedException } from '@app/common';
 import { OidcService } from '../oidc/services/oidc.service';
 
 /**
@@ -23,11 +24,11 @@ export class OidcBearerGuard implements CanActivate {
     const provider = await this.oidcService.getProvider();
     const stored = await provider.AccessToken.find(accessToken);
     if (!stored) {
-      throw new UnauthorizedException('access_token 无效');
+      throw createAuthSessionTerminatedException('访问令牌无效或已失效，请重新登录');
     }
 
     if (stored.isExpired) {
-      throw new UnauthorizedException('access_token 已过期');
+      throw createAuthSessionTerminatedException('访问令牌已过期，请重新登录');
     }
 
     const accountId = stored.accountId;

@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { createAuthSessionTerminatedException } from '@app/common';
 import { AuthService } from '../../../identity/auth/services/auth.service';
 
 /**
@@ -26,12 +27,15 @@ export class SessionBearerGuard implements CanActivate {
       throw new UnauthorizedException('session token 为空');
     }
 
-    const user = await this.authService.validateSession(token);
-    if (!user) {
-      throw new UnauthorizedException('session 无效或已过期');
+    try {
+      const user = await this.authService.assertPortalSession(token);
+      request.user = { id: user.id };
+      return true;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw createAuthSessionTerminatedException('session 无效或已过期');
     }
-
-    request.user = { id: user.id };
-    return true;
   }
 }

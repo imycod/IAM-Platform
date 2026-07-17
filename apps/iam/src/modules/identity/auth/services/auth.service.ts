@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { createAuthSessionTerminatedException } from '@app/common';
 import { UserRepository } from '../../user/repositories/user.repository';
 import { AccountService } from '../../account/services/account.service';
 import { SessionService } from '../../session/services/session.service';
@@ -21,6 +22,8 @@ export interface LoginContext {
   userAgent?: string;
   deviceId?: string;
   loginType?: LoginType;
+  /** 账密登录所属应用（会话中心展示用） */
+  applicationId?: string;
 }
 
 export interface AuthResult {
@@ -145,6 +148,7 @@ export class AuthService {
         ipAddress: ctx.ip ?? null,
         userAgent: ctx.userAgent ?? null,
         deviceId: ctx.deviceId ?? null,
+        applicationId: ctx.applicationId ?? null,
       });
       await this.userRepository.update(user.id, { lastLoginAt: new Date() });
       await this.recordLoginAttempt({
@@ -183,6 +187,22 @@ export class AuthService {
     } catch {
       // 审计写入失败不应阻断登录流程
     }
+  }
+
+  /** 校验门户 session token；失效时抛出 AUTH_SESSION_TERMINATED。 */
+  async assertPortalSession(token: string): Promise<UserEntity> {
+    const session = await this.sessionService.findByToken(token);
+    if (!session) {
+      throw createAuthSessionTerminatedException('登录会话已失效，请重新登录');
+    }
+    if (session.expiresAt.getTime() < Date.now()) {
+      throw createAuthSessionTerminatedException('登录会话已过期，请重新登录');
+    }
+    const user = await this.userRepository.findById(session.userId);
+    if (!user) {
+      throw createAuthSessionTerminatedException('登录会话已失效，请重新登录');
+    }
+    return user;
   }
 
   /** 校验会话 token，返回对应用户。 */

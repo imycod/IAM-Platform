@@ -111,6 +111,7 @@ export class PortalController {
     const result = await this.authService.login(email, dto.password, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
+      applicationId: app.id,
     });
 
     const data = await this.buildPortalUserData(result.user.id, app, result.token, result.token);

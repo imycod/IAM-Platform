@@ -23,11 +23,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | object = 'Internal server error';
+    let errorCode: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
-      message = typeof res === 'string' ? res : (res as { message?: string }).message ?? res;
+      if (typeof res === 'string') {
+        message = res;
+      } else if (typeof res === 'object' && res !== null) {
+        const obj = res as { message?: string | string[]; errorCode?: string };
+        const raw = obj.message ?? res;
+        message = Array.isArray(raw) ? raw.join(', ') : raw;
+        if (typeof obj.errorCode === 'string') {
+          errorCode = obj.errorCode;
+        }
+      }
     } else if (exception instanceof QueryFailedError) {
       const driverError = (
         exception as QueryFailedError & { driverError?: { code?: string } }
@@ -48,6 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       code: status,
       message,
+      ...(errorCode ? { errorCode } : {}),
       data: null,
       path: request.url,
       timestamp: new Date().toISOString(),

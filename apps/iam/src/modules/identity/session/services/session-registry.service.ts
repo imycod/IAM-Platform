@@ -45,6 +45,7 @@ export class SessionRegistryService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const clientMap = await this.buildClientMap();
+    const appMap = await this.buildApplicationMap();
 
     const items: UnifiedSessionItem[] = [];
 
@@ -56,6 +57,7 @@ export class SessionRegistryService {
       });
       const portal = await this.sessionService.findMany(portalQuery);
       for (const row of portal.items) {
+        const appMeta = row.applicationId ? appMap.get(row.applicationId) : undefined;
         items.push({
           id: row.id,
           kind: UnifiedSessionKind.PORTAL_PASSWORD,
@@ -63,8 +65,8 @@ export class SessionRegistryService {
           userEmail: row.user?.email ?? null,
           userName: row.user?.name ?? null,
           clientId: null,
-          clientName: '账密门户',
-          applicationCode: 'iam-admin',
+          clientName: appMeta?.name ?? '账密门户',
+          applicationCode: appMeta?.code ?? null,
           ipAddress: row.ipAddress,
           userAgent: row.userAgent,
           expiresAt: row.expiresAt?.toISOString() ?? null,
@@ -216,6 +218,11 @@ export class SessionRegistryService {
       item.userEmail = user.email ?? null;
       item.userName = user.name ?? null;
     }
+  }
+
+  private async buildApplicationMap(): Promise<Map<string, { name: string; code: string }>> {
+    const apps = await this.applicationService.findAll();
+    return new Map(apps.map((app) => [app.id, { name: app.name, code: app.code }]));
   }
 
   private async buildClientMap(): Promise<

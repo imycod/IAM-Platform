@@ -1,4 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { createAuthSessionTerminatedException } from '@app/common';
 import { AuthService } from '../../../identity/auth/services/auth.service';
 import { OidcService } from '../../../security/oidc/services/oidc.service';
 
@@ -27,17 +28,25 @@ export class PortalOrOidcGuard implements CanActivate {
 
     const provider = await this.oidcService.getProvider();
     const stored = await provider.AccessToken.find(token);
-    if (stored && !stored.isExpired && stored.accountId) {
-      request.user = { id: stored.accountId };
-      return true;
+    if (stored) {
+      if (stored.isExpired) {
+        throw createAuthSessionTerminatedException('访问令牌已过期，请重新登录');
+      }
+      if (stored.accountId) {
+        request.user = { id: stored.accountId };
+        return true;
+      }
     }
 
-    const user = await this.authService.validateSession(token);
-    if (user) {
+    try {
+      const user = await this.authService.assertPortalSession(token);
       request.user = { id: user.id };
       return true;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw createAuthSessionTerminatedException('token 无效或已过期');
     }
-
-    throw new UnauthorizedException('token 无效或已过期');
   }
 }

@@ -12,6 +12,7 @@ import type {
 import { stringify } from "qs";
 import { getToken, formatToken } from "@/utils/auth";
 import { useUserStoreHook } from "@/store/modules/user";
+import { handleAuthSessionTerminatedIfNeeded } from "@/utils/auth-session-terminated";
 
 // 相关配置请参考：www.axios-js.com/zh-cn/docs/#axios-request-config-1
 const defaultConfig: AxiosRequestConfig = {
@@ -90,6 +91,9 @@ class PureHttp {
                         PureHttp.requests.forEach(cb => cb(token));
                         PureHttp.requests = [];
                       })
+                      .catch(refreshError => {
+                        void handleAuthSessionTerminatedIfNeeded(refreshError);
+                      })
                       .finally(() => {
                         PureHttp.isRefreshing = false;
                       });
@@ -132,7 +136,7 @@ class PureHttp {
       (error: PureHttpError) => {
         const $error = error;
         $error.isCancelRequest = Axios.isCancel($error);
-        // 所有的响应异常 区分来源为取消请求/非取消请求
+        void handleAuthSessionTerminatedIfNeeded($error);
         return Promise.reject($error);
       }
     );

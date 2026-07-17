@@ -38,6 +38,10 @@ export class SessionEntity extends BaseEntity {
   @Column({ type: 'char', length: 26, nullable: true })
   deviceId: string | null;
 
+  @Index()
+  @Column({ type: 'char', length: 26, nullable: true, name: 'application_id' })
+  applicationId: string | null;
+
   @ManyToOne(() => DeviceEntity, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'device_id' })
   device?: DeviceEntity | null;

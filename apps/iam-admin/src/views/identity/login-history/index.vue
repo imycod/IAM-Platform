@@ -84,8 +84,8 @@ const columns: TableColumnList = [
   {
     label: "结果",
     prop: "success",
-    minWidth: 80,
-    formatter: ({ success }) => (success ? "成功" : "失败")
+    minWidth: 88,
+    slot: "successStatus"
   },
   {
     label: "登录类型",
@@ -366,6 +366,15 @@ onMounted(onSearch);
           :data="dataList"
           :columns="dynamicColumns"
         >
+          <template #successStatus="{ row }">
+            <el-tag
+              :type="row.success ? 'success' : 'danger'"
+              size="small"
+              effect="plain"
+            >
+              {{ row.success ? "成功" : "失败" }}
+            </el-tag>
+          </template>
           <template #operation="{ row }">
             <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>

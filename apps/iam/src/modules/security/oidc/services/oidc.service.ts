@@ -415,6 +415,24 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
       }
 
       const user = await this.userRepo.findOne({ where: { id: accountId } });
+      const clientId = ctx.oidc?.client?.clientId ?? null;
+      let applicationId: string | null = null;
+      let applicationCode: string | null = null;
+      let applicationName: string | null = null;
+      if (clientId) {
+        const oauthClient = await this.oauthClientService.findByClientId(clientId);
+        if (oauthClient) {
+          applicationId = oauthClient.applicationId;
+          try {
+            const app = await this.applicationService.findOne(oauthClient.applicationId);
+            applicationCode = app.code;
+            applicationName = app.name;
+          } catch {
+            // 应用可能已删除，仍保留 clientId
+          }
+        }
+      }
+
       await this.loginHistoryService.record({
         success: true,
         userId: accountId,
@@ -422,6 +440,10 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
         loginType: LoginType.SSO,
         ip: req?.ip ?? null,
         userAgent: req?.headers?.['user-agent'] ?? null,
+        clientId,
+        applicationId,
+        applicationCode,
+        applicationName,
       });
       await this.userRepo.update(accountId, { lastLoginAt: new Date() });
     } catch (error) {

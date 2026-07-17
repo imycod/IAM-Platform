@@ -12,6 +12,10 @@ export interface LoginHistoryItem {
   success: boolean;
   failReason?: string | null;
   loginType?: string | null;
+  clientId?: string | null;
+  applicationId?: string | null;
+  applicationCode?: string | null;
+  applicationName?: string | null;
   createdAt?: string;
 }
 
@@ -24,6 +28,10 @@ export interface LoginHistoryForm {
   success: boolean;
   failReason?: string;
   loginType?: string;
+  clientId?: string;
+  applicationId?: string;
+  applicationCode?: string;
+  applicationName?: string;
 }
 
 export const getLoginHistories = (params?: {
@@ -31,6 +39,8 @@ export const getLoginHistories = (params?: {
   pageSize?: number;
   userId?: string;
   success?: boolean;
+  applicationCode?: string;
+  clientId?: string;
 }) =>
   http
     .get<unknown>("/api/login-histories", { params })
@@ -48,3 +58,13 @@ export const updateLoginHistory = (id: string, data: Partial<LoginHistoryForm>) 
 
 export const deleteLoginHistory = (id: string) =>
   http.request<unknown>("delete", `/api/login-histories/${id}`);
+
+export const deleteAllLoginHistories = (params?: {
+  userId?: string;
+  success?: boolean;
+  applicationCode?: string;
+  clientId?: string;
+}) =>
+  http
+    .request<{ deleted: number }>("delete", "/api/login-histories/all", { params })
+    .then(body => unwrapIamPayload<{ deleted: number }>(body));

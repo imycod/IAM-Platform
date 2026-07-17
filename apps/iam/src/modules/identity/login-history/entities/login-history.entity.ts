@@ -40,4 +40,19 @@ export class LoginHistoryEntity extends BaseEntity {
 
   @Column({ type: 'varchar', length: 30, nullable: true })
   loginType: LoginType | null;
+
+  /** OIDC client_id（SSO 登录时有值） */
+  @Index()
+  @Column({ type: 'varchar', length: 128, nullable: true, name: 'client_id' })
+  clientId: string | null;
+
+  @Index()
+  @Column({ type: 'char', length: 26, nullable: true, name: 'application_id' })
+  applicationId: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, name: 'application_code' })
+  applicationCode: string | null;
+
+  @Column({ type: 'varchar', length: 128, nullable: true, name: 'application_name' })
+  applicationName: string | null;
 }

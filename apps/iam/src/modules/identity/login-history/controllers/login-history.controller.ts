@@ -29,6 +29,13 @@ export class LoginHistoryController {
     return this.loginHistoryService.findMany(query);
   }
 
+  /** 一键删除：按查询条件批量软删除（无条件则清空全部） */
+  @Delete('all')
+  @HttpCode(HttpStatus.OK)
+  removeAll(@Query() query: QueryLoginHistoryDto) {
+    return this.loginHistoryService.removeAll(query);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.loginHistoryService.findOne(id);

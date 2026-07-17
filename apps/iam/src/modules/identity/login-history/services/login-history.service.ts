@@ -26,6 +26,8 @@ export class LoginHistoryService {
     const where: FindOptionsWhere<LoginHistoryEntity> = {};
     if (query.userId) where.userId = query.userId;
     if (query.success !== undefined) where.success = query.success;
+    if (query.applicationCode) where.applicationCode = query.applicationCode;
+    if (query.clientId) where.clientId = query.clientId;
     const [items, total] = await this.repo.findAndCount({
       where,
       skip: query.skip,
@@ -52,6 +54,22 @@ export class LoginHistoryService {
   async remove(id: string): Promise<void> {
     await this.findOne(id);
     await this.repo.softDelete({ id });
+  }
+
+  /** 按筛选条件批量软删除；无条件时清空全部登录历史 */
+  async removeAll(query: QueryLoginHistoryDto): Promise<{ deleted: number }> {
+    const where: FindOptionsWhere<LoginHistoryEntity> = {};
+    if (query.userId) where.userId = query.userId;
+    if (query.success !== undefined) where.success = query.success;
+    if (query.applicationCode) where.applicationCode = query.applicationCode;
+    if (query.clientId) where.clientId = query.clientId;
+
+    const result =
+      Object.keys(where).length > 0
+        ? await this.repo.softDelete(where)
+        : await this.repo.createQueryBuilder().softDelete().execute();
+
+    return { deleted: result.affected ?? 0 };
   }
 
   async listByUser(

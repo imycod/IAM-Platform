@@ -9,4 +9,12 @@ export class QueryLoginHistoryDto extends PaginationQueryDto {
   @IsOptional()
   @IsBoolean()
   success?: boolean;
+
+  @IsOptional()
+  @IsString()
+  applicationCode?: string;
+
+  @IsOptional()
+  @IsString()
+  clientId?: string;
 }

@@ -2,6 +2,7 @@
 import { PureTableBar } from "@/components/RePureTableBar";
 import {
   createLoginHistory,
+  deleteAllLoginHistories,
   deleteLoginHistory,
   getLoginHistories,
   updateLoginHistory,
@@ -24,6 +25,8 @@ const dataList = ref<LoginHistoryItem[]>([]);
 const filters = reactive({
   userId: "",
   identifier: "",
+  applicationCode: "",
+  clientId: "",
   success: "" as boolean | ""
 });
 
@@ -31,6 +34,23 @@ const successFilterOptions = [
   { label: "成功", value: true },
   { label: "失败", value: false }
 ];
+
+const loginTypeLabelMap: Record<string, string> = {
+  password: "账密",
+  sso: "SSO",
+  oauth: "OAuth",
+  magic_link: "Magic Link"
+};
+
+function formatApplication(row: LoginHistoryItem): string {
+  const { applicationName, applicationCode } = row;
+  if (applicationName && applicationCode) {
+    return `${applicationName}（${applicationCode}）`;
+  }
+  if (applicationName) return applicationName;
+  if (applicationCode) return applicationCode;
+  return "-";
+}
 
 const columns: TableColumnList = [
   {
@@ -45,6 +65,21 @@ const columns: TableColumnList = [
     minWidth: 160,
     formatter: ({ identifier }) => identifier ?? "-"
   },
+  {
+    label: "应用",
+    minWidth: 180,
+    formatter: row => formatApplication(row)
+  },
+  {
+    label: "客户端 ID",
+    prop: "clientId",
+    minWidth: 150,
+    formatter: ({ clientId, loginType }) => {
+      if (clientId) return clientId;
+      if (loginType === "password") return "—（账密，无 OIDC）";
+      return "-";
+    }
+  },
   { label: "IP", prop: "ip", minWidth: 130, formatter: ({ ip }) => ip ?? "-" },
   {
     label: "结果",
@@ -55,8 +90,9 @@ const columns: TableColumnList = [
   {
     label: "登录类型",
     prop: "loginType",
-    minWidth: 120,
-    formatter: ({ loginType }) => loginType ?? "-"
+    minWidth: 100,
+    formatter: ({ loginType }) =>
+      loginType ? (loginTypeLabelMap[loginType] ?? loginType) : "-"
   },
   {
     label: "失败原因",
@@ -80,7 +116,10 @@ const formModel = reactive<LoginHistoryForm>({
   ip: "",
   success: true,
   loginType: "",
-  failReason: ""
+  failReason: "",
+  clientId: "",
+  applicationCode: "",
+  applicationName: ""
 });
 
 const formRules: FormRules = {
@@ -94,6 +133,8 @@ async function onSearch() {
       page: 1,
       pageSize: 100,
       userId: filters.userId.trim() || undefined,
+      applicationCode: filters.applicationCode.trim() || undefined,
+      clientId: filters.clientId.trim() || undefined,
       success: filters.success === "" ? undefined : filters.success
     });
     dataList.value = res.items.filter(row => {
@@ -118,6 +159,9 @@ function resetForm() {
   formModel.success = true;
   formModel.loginType = "";
   formModel.failReason = "";
+  formModel.clientId = "";
+  formModel.applicationCode = "";
+  formModel.applicationName = "";
   editingId.value = null;
   formRef.value?.clearValidate();
 }
@@ -138,6 +182,9 @@ function openEditDialog(row: LoginHistoryItem) {
   formModel.success = row.success;
   formModel.loginType = row.loginType ?? "";
   formModel.failReason = row.failReason ?? "";
+  formModel.clientId = row.clientId ?? "";
+  formModel.applicationCode = row.applicationCode ?? "";
+  formModel.applicationName = row.applicationName ?? "";
   dialogVisible.value = true;
 }
 
@@ -148,7 +195,10 @@ function buildPayload(): LoginHistoryForm {
     ip: formModel.ip?.trim() || undefined,
     success: formModel.success,
     loginType: formModel.loginType?.trim() || undefined,
-    failReason: formModel.failReason?.trim() || undefined
+    failReason: formModel.failReason?.trim() || undefined,
+    clientId: formModel.clientId?.trim() || undefined,
+    applicationCode: formModel.applicationCode?.trim() || undefined,
+    applicationName: formModel.applicationName?.trim() || undefined
   };
 }
 
@@ -175,6 +225,49 @@ async function submitForm() {
     );
   } finally {
     submitting.value = false;
+  }
+}
+
+async function handleDeleteAll() {
+  const scopeParts: string[] = [];
+  if (filters.userId.trim()) scopeParts.push(`用户 ${filters.userId.trim()}`);
+  if (filters.applicationCode.trim()) {
+    scopeParts.push(`应用 ${filters.applicationCode.trim()}`);
+  }
+  if (filters.clientId.trim()) scopeParts.push(`Client ${filters.clientId.trim()}`);
+  if (filters.success !== "") {
+    scopeParts.push(filters.success ? "成功记录" : "失败记录");
+  }
+  const scope =
+    scopeParts.length > 0
+      ? `将删除${scopeParts.join("、")}下的`
+      : "将删除系统中";
+  const countHint =
+    dataList.value.length > 0 ? `当前列表共 ${dataList.value.length} 条，` : "";
+  const identifierHint = filters.identifier.trim()
+    ? "（「标识」仅用于列表筛选，批量删除按上方用户 ID / 应用 / Client / 结果条件执行）"
+    : "";
+
+  try {
+    await ElMessageBox.confirm(
+      `${countHint}${scope}所有登录历史记录，此操作不可恢复。${identifierHint}`,
+      "一键清空登录历史",
+      { type: "warning", confirmButtonText: "全部删除", cancelButtonText: "取消" }
+    );
+    const res = await deleteAllLoginHistories({
+      userId: filters.userId.trim() || undefined,
+      applicationCode: filters.applicationCode.trim() || undefined,
+      clientId: filters.clientId.trim() || undefined,
+      success: filters.success === "" ? undefined : filters.success
+    });
+    message(`已删除 ${res.deleted} 条记录`, { type: "success" });
+    await onSearch();
+  } catch (error: any) {
+    if (error === "cancel" || error === "close") return;
+    message(
+      error?.response?.data?.message ?? error?.message ?? "操作失败，请稍后重试",
+      { type: "error" }
+    );
   }
 }
 
@@ -221,6 +314,24 @@ onMounted(onSearch);
           @keyup.enter="onSearch"
         />
       </el-form-item>
+      <el-form-item label="应用 code">
+        <el-input
+          v-model="filters.applicationCode"
+          clearable
+          placeholder="如 iam-admin"
+          class="w-[160px]!"
+          @keyup.enter="onSearch"
+        />
+      </el-form-item>
+      <el-form-item label="Client ID">
+        <el-input
+          v-model="filters.clientId"
+          clearable
+          placeholder="OIDC client_id"
+          class="w-[180px]!"
+          @keyup.enter="onSearch"
+        />
+      </el-form-item>
       <el-form-item label="结果">
         <el-select v-model="filters.success" clearable placeholder="全部" class="w-[120px]!">
           <el-option
@@ -238,6 +349,7 @@ onMounted(onSearch);
 
     <PureTableBar title="登录历史" :columns="columns" @refresh="onSearch">
       <template #buttons>
+        <el-button type="danger" plain @click="handleDeleteAll">一键清空</el-button>
         <el-button type="primary" @click="openCreateDialog">添加记录</el-button>
       </template>
       <template #default="{ size, dynamicColumns }">
@@ -286,7 +398,16 @@ onMounted(onSearch);
           </el-radio-group>
         </el-form-item>
         <el-form-item label="登录类型">
-          <el-input v-model="formModel.loginType" placeholder="如 password / oauth" />
+          <el-input v-model="formModel.loginType" placeholder="如 password / sso" />
+        </el-form-item>
+        <el-form-item label="应用 code">
+          <el-input v-model="formModel.applicationCode" placeholder="如 iam-admin" />
+        </el-form-item>
+        <el-form-item label="应用名称">
+          <el-input v-model="formModel.applicationName" placeholder="展示用" />
+        </el-form-item>
+        <el-form-item label="OIDC Client">
+          <el-input v-model="formModel.clientId" placeholder="SSO 客户端 client_id" />
         </el-form-item>
         <el-form-item label="失败原因">
           <el-input

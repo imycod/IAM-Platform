@@ -2,6 +2,8 @@ import { randomBytes } from 'crypto';
 import {
   Injectable,
   UnauthorizedException,
+  ForbiddenException,
+  HttpException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { createAuthSessionTerminatedException } from '@app/common';
@@ -22,8 +24,12 @@ export interface LoginContext {
   userAgent?: string;
   deviceId?: string;
   loginType?: LoginType;
-  /** 账密登录所属应用（会话中心展示用） */
+  /** 账密登录所属应用 */
   applicationId?: string;
+  applicationCode?: string;
+  applicationName?: string;
+  /** SSO 登录时的 OIDC client_id */
+  clientId?: string;
 }
 
 export interface AuthResult {
@@ -129,6 +135,7 @@ export class AuthService {
         ip: ctx.ip ?? null,
         userAgent: ctx.userAgent ?? null,
         failReason: error instanceof UnauthorizedException ? error.message : '登录失败',
+        ...this.loginAuditContext(ctx),
       });
       throw error;
     }
@@ -139,42 +146,90 @@ export class AuthService {
     const loginType = ctx.loginType ?? LoginType.PASSWORD;
     try {
       const user = await this.verifyCredentials(email, password);
-      const token = randomBytes(32).toString('hex');
-      const ttlSeconds = await this.authSessionSettings.resolvePortalSessionTtlSeconds(
-        ctx.applicationId,
-      );
-      const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
-      await this.sessionService.createFromPartial({
-        userId: user.id,
-        kind: PortalSessionKind.PORTAL_PASSWORD,
-        token,
-        expiresAt,
-        ipAddress: ctx.ip ?? null,
-        userAgent: ctx.userAgent ?? null,
-        deviceId: ctx.deviceId ?? null,
-        applicationId: ctx.applicationId ?? null,
-      });
-      await this.userRepository.update(user.id, { lastLoginAt: new Date() });
-      await this.recordLoginAttempt({
-        success: true,
-        userId: user.id,
-        identifier: email,
-        loginType,
-        ip: ctx.ip ?? null,
-        userAgent: ctx.userAgent ?? null,
-      });
-      return { user, token, expiresAt };
+      return await this.completePortalLogin(user, email, { ...ctx, loginType });
     } catch (error) {
-      await this.recordLoginAttempt({
-        success: false,
-        identifier: email,
-        loginType,
-        ip: ctx.ip ?? null,
-        userAgent: ctx.userAgent ?? null,
-        failReason: error instanceof UnauthorizedException ? error.message : '登录失败',
-      });
+      await this.recordLoginFailure(email, error, { ...ctx, loginType });
       throw error;
     }
+  }
+
+  /** 凭证已通过且应用进门校验完成后：签发 session 并记成功审计。 */
+  async completePortalLogin(
+    user: UserEntity,
+    identifier: string,
+    ctx: LoginContext = {},
+  ): Promise<AuthResult> {
+    const loginType = ctx.loginType ?? LoginType.PASSWORD;
+    const token = randomBytes(32).toString('hex');
+    const ttlSeconds = await this.authSessionSettings.resolvePortalSessionTtlSeconds(
+      ctx.applicationId,
+    );
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    await this.sessionService.createFromPartial({
+      userId: user.id,
+      kind: PortalSessionKind.PORTAL_PASSWORD,
+      token,
+      expiresAt,
+      ipAddress: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      deviceId: ctx.deviceId ?? null,
+      applicationId: ctx.applicationId ?? null,
+    });
+    await this.userRepository.update(user.id, { lastLoginAt: new Date() });
+    await this.recordLoginAttempt({
+      success: true,
+      userId: user.id,
+      identifier,
+      loginType,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      ...this.loginAuditContext(ctx),
+    });
+    return { user, token, expiresAt };
+  }
+
+  /** 门户登录失败审计（含无权访问应用等进门失败）。 */
+  async recordLoginFailure(
+    identifier: string,
+    error: unknown,
+    ctx: LoginContext = {},
+    userId?: string,
+  ): Promise<void> {
+    await this.recordLoginAttempt({
+      success: false,
+      userId,
+      identifier,
+      loginType: ctx.loginType ?? LoginType.PASSWORD,
+      ip: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+      failReason: this.resolveLoginFailReason(error),
+      ...this.loginAuditContext(ctx),
+    });
+  }
+
+  private resolveLoginFailReason(error: unknown): string {
+    if (error instanceof UnauthorizedException || error instanceof ForbiddenException) {
+      return error.message;
+    }
+    if (error instanceof HttpException) {
+      const msg = error.message;
+      return typeof msg === 'string' && msg.length > 0 ? msg : '登录失败';
+    }
+    return '登录失败';
+  }
+
+  private loginAuditContext(ctx: LoginContext): {
+    clientId: string | null;
+    applicationId: string | null;
+    applicationCode: string | null;
+    applicationName: string | null;
+  } {
+    return {
+      clientId: ctx.clientId ?? null,
+      applicationId: ctx.applicationId ?? null,
+      applicationCode: ctx.applicationCode ?? null,
+      applicationName: ctx.applicationName ?? null,
+    };
   }
 
   private async recordLoginAttempt(data: {
@@ -185,6 +240,10 @@ export class AuthService {
     ip?: string | null;
     userAgent?: string | null;
     failReason?: string;
+    clientId?: string | null;
+    applicationId?: string | null;
+    applicationCode?: string | null;
+    applicationName?: string | null;
   }): Promise<void> {
     try {
       await this.loginHistoryService.record(data);

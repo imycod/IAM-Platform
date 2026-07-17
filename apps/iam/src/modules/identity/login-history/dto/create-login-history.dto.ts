@@ -38,4 +38,24 @@ export class CreateLoginHistoryDto {
   @IsOptional()
   @IsEnum(LoginType)
   loginType?: LoginType;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 128)
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(26, 26)
+  applicationId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 64)
+  applicationCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 128)
+  applicationName?: string;
 }

@@ -15,6 +15,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthService } from '../../identity/auth/services/auth.service';
 import { UserEntity } from '../../identity/user/entities/user.entity';
+import { LoginType } from '../../identity/login-history/entities/login-history.entity';
 import { ApplicationEntity } from '../../application/application/entities/application.entity';
 import { ApplicationService } from '../../application/services/application.service';
 import { PermissionService } from '../permission/services/permission.service';
@@ -28,6 +29,7 @@ import { AuthSessionSettingsService } from '../../system/auth-session/auth-sessi
 import { PortalTokenRefreshService } from './portal-token-refresh.service';
 import { PortalRefreshTokenDto } from './dto/portal-refresh-token.dto';
 import { PortalLogoutDto } from './dto/portal-logout.dto';
+import { OauthClientService } from '../../security/oauth-client/services/oauth-client.service';
 
 interface AuthedRequest extends Request {
   user: { id: string };
@@ -66,6 +68,7 @@ export class PortalController {
     private readonly userRepo: Repository<UserEntity>,
     private readonly authSessionSettings: AuthSessionSettingsService,
     private readonly portalTokenRefresh: PortalTokenRefreshService,
+    private readonly oauthClientService: OauthClientService,
   ) {}
 
   private async resolveApp(appCode?: string): Promise<ApplicationEntity> {
@@ -118,15 +121,29 @@ export class PortalController {
   async login(@Body() dto: PortalLoginDto, @Req() req: Request) {
     const email = dto.email ?? dto.username;
     const app = await this.resolveApp(dto.appCode);
+    const oauthClient = await this.oauthClientService.findByApplicationId(app.id);
 
-    const result = await this.authService.login(email, dto.password, {
+    const ctx = {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
       applicationId: app.id,
-    });
+      applicationCode: app.code,
+      applicationName: app.name,
+      clientId: oauthClient?.clientId ?? undefined,
+      loginType: LoginType.PASSWORD,
+    };
 
-    const data = await this.buildPortalUserData(result.user.id, app, result.token, result.token);
-    return { success: true, data: { ...data, expires: result.expiresAt } };
+    let user: UserEntity | undefined;
+    try {
+      user = await this.authService.verifyCredentials(email, dto.password);
+      await this.applicationService.assertUserCanAccess(app.id, user.id);
+      const result = await this.authService.completePortalLogin(user, email, ctx);
+      const data = await this.buildPortalUserData(result.user.id, app, result.token, result.token);
+      return { success: true, data: { ...data, expires: result.expiresAt } };
+    } catch (error) {
+      await this.authService.recordLoginFailure(email, error, ctx, user?.id);
+      throw error;
+    }
   }
 
   /** OIDC 回调后拉取用户信息（Bearer = OIDC access_token） */

@@ -30,6 +30,13 @@ const SECURITY_MENUS: MenuSeed[] = [
         sort: 1,
         permissionCode: 'iam_admin:oauth_client:view',
       },
+      {
+        name: '会话过期策略',
+        path: '/security/auth-session-settings/index',
+        icon: 'ep:timer',
+        sort: 2,
+        permissionCode: 'iam_admin:auth_session:view',
+      },
     ],
   },
 ];
@@ -45,6 +52,18 @@ const PERMISSIONS = [
     name: 'OAuth 客户端管理',
     code: 'iam_admin:oauth_client:manage',
     resource: 'iam_admin:oauth_client',
+    action: 'manage',
+  },
+  {
+    name: '会话过期策略查看',
+    code: 'iam_admin:auth_session:view',
+    resource: 'iam_admin:auth_session',
+    action: 'view',
+  },
+  {
+    name: '会话过期策略管理',
+    code: 'iam_admin:auth_session:manage',
+    resource: 'iam_admin:auth_session',
     action: 'manage',
   },
 ] as const;

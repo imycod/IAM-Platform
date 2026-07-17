@@ -5,6 +5,7 @@ import { SessionModule } from '../session/session.module';
 import { ProfileModule } from '../profile/profile.module';
 import { LoginHistoryModule } from '../login-history/login-history.module';
 import { OidcModule } from '../../security/oidc/oidc.module';
+import { SystemModule } from '../../system/system.module';
 import { AuthService } from './services/auth.service';
 import { AuthAdminService } from './services/auth-admin.service';
 import { AuthController } from './controllers/auth.controller';
@@ -19,7 +20,7 @@ import { InteractionController } from './interaction/interaction.controller';
  * InteractionController 只依赖契约、不依赖 security 的具体实现。OidcModule 不反向依赖 identity，无循环。
  */
 @Module({
-  imports: [UserModule, AccountModule, SessionModule, ProfileModule, LoginHistoryModule, OidcModule],
+  imports: [UserModule, AccountModule, SessionModule, ProfileModule, LoginHistoryModule, OidcModule, SystemModule],
   controllers: [AuthController, AuthAdminController, InteractionController],
   providers: [AuthService, AuthAdminService, BetterAuthFactory],
   exports: [AuthService],

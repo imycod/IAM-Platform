@@ -1,4 +1,5 @@
 import type { VNode } from "vue";
+import type { AxiosError } from "axios";
 import { isFunction } from "@pureadmin/utils";
 import { type MessageHandler, ElMessage } from "element-plus";
 
@@ -86,4 +87,25 @@ const message = (
  */
 const closeAllMessage = (): void => ElMessage.closeAll();
 
-export { message, closeAllMessage };
+/** HTTP 请求失败提示（会话失效时由拦截器统一处理，此处不再重复弹窗） */
+function messageApiError(
+  error: unknown,
+  fallback: string,
+  params?: Omit<MessageParams, "type">
+): MessageHandler | undefined {
+  if (
+    error &&
+    typeof error === "object" &&
+    (error as { authSessionTerminated?: boolean }).authSessionTerminated
+  ) {
+    return;
+  }
+  const axiosErr = error as AxiosError<{ message?: string }>;
+  const text =
+    axiosErr?.response?.data?.message ??
+    (error as Error)?.message ??
+    fallback;
+  return message(text, { type: "error", ...params });
+}
+
+export { message, closeAllMessage, messageApiError };

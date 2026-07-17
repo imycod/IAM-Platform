@@ -1,7 +1,8 @@
 import Axios, {
   type AxiosInstance,
   type AxiosRequestConfig,
-  type CustomParamsSerializer
+  type CustomParamsSerializer,
+  AxiosError
 } from "axios";
 import type {
   PureHttpError,
@@ -12,18 +13,25 @@ import type {
 import { stringify } from "qs";
 import { getToken, formatToken } from "@/utils/auth";
 import { useUserStoreHook } from "@/store/modules/user";
-import { handleAuthSessionTerminatedIfNeeded } from "@/utils/auth-session-terminated";
+import {
+  extractAuthSessionTerminatedFromBody,
+  extractAuthSessionTerminatedMessage,
+  handleAuthSessionTerminatedIfNeeded,
+  tagAuthSessionTerminatedError
+} from "@/utils/auth-session-terminated";
+import {
+  flushRefreshQueue,
+  shouldRefreshAccessToken,
+  type RefreshQueueItem
+} from "@/utils/token-refresh";
 
-// 相关配置请参考：www.axios-js.com/zh-cn/docs/#axios-request-config-1
 const defaultConfig: AxiosRequestConfig = {
-  // 请求超时时间
   timeout: 10000,
   headers: {
     Accept: "application/json, text/plain, */*",
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest"
   },
-  // 数组格式参数序列化（https://github.com/axios/axios/issues/5142）
   paramsSerializer: {
     serialize: stringify as unknown as CustomParamsSerializer
   }
@@ -35,33 +43,35 @@ class PureHttp {
     this.httpInterceptorsResponse();
   }
 
-  /** `token`过期后，暂存待执行的请求 */
-  private static requests = [];
+  private static refreshQueue: RefreshQueueItem[] = [];
 
-  /** 防止重复刷新`token` */
   private static isRefreshing = false;
 
-  /** 初始化配置对象 */
   private static initConfig: PureHttpRequestConfig = {};
 
-  /** 保存当前`Axios`实例对象 */
   private static axiosInstance: AxiosInstance = Axios.create(defaultConfig);
 
-  /** 重连原始请求 */
   private static retryOriginalRequest(config: PureHttpRequestConfig) {
-    return new Promise(resolve => {
-      PureHttp.requests.push((token: string) => {
-        config.headers["Authorization"] = formatToken(token);
-        resolve(config);
+    return new Promise((resolve, reject) => {
+      PureHttp.refreshQueue.push({
+        resolve: (token: string) => {
+          config.headers["Authorization"] = formatToken(token);
+          resolve(config);
+        },
+        reject
       });
     });
   }
 
-  /** 请求拦截 */
+  private static runRefresh(refreshToken: string): Promise<string> {
+    return useUserStoreHook()
+      .handRefreshToken({ refreshToken })
+      .then(res => res.data.accessToken);
+  }
+
   private httpInterceptorsRequest(): void {
     PureHttp.axiosInstance.interceptors.request.use(
       async (config: PureHttpRequestConfig): Promise<any> => {
-        // 优先判断post/get等方法是否传入回调，否则执行初始化设置等回调
         if (typeof config.beforeRequestCallback === "function") {
           config.beforeRequestCallback(config);
           return config;
@@ -70,59 +80,85 @@ class PureHttp {
           PureHttp.initConfig.beforeRequestCallback(config);
           return config;
         }
-        /** 请求白名单，放置一些不需要`token`的接口（通过设置请求白名单，防止`token`过期后再请求造成的死循环问题） */
-        const whiteList = ["/refresh-token", "/login", "/api/portal/login"];
-        return whiteList.some(url => config.url.endsWith(url))
-          ? config
-          : new Promise(resolve => {
-              const data = getToken();
-              if (data) {
-                const now = new Date().getTime();
-                const expired = parseInt(data.expires) - now <= 0;
-                if (expired) {
-                  if (!PureHttp.isRefreshing) {
-                    PureHttp.isRefreshing = true;
-                    // token过期刷新
-                    useUserStoreHook()
-                      .handRefreshToken({ refreshToken: data.refreshToken })
-                      .then(res => {
-                        const token = res.data.accessToken;
-                        config.headers["Authorization"] = formatToken(token);
-                        PureHttp.requests.forEach(cb => cb(token));
-                        PureHttp.requests = [];
-                      })
-                      .catch(refreshError => {
-                        void handleAuthSessionTerminatedIfNeeded(refreshError);
-                      })
-                      .finally(() => {
-                        PureHttp.isRefreshing = false;
-                      });
-                  }
-                  resolve(PureHttp.retryOriginalRequest(config));
-                } else {
-                  config.headers["Authorization"] = formatToken(
-                    data.accessToken
-                  );
-                  resolve(config);
+
+        const whiteList = [
+          "/api/portal/refresh-token",
+          "/refresh-token",
+          "/login",
+          "/api/portal/login"
+        ];
+        if (whiteList.some(url => config.url?.endsWith(url))) {
+          return config;
+        }
+
+        return new Promise((resolve, reject) => {
+          const data = getToken();
+          const refreshToken = data?.refreshToken;
+          const accessToken = data?.accessToken;
+
+          if (!refreshToken && !accessToken) {
+            resolve(config);
+            return;
+          }
+
+          const needsRefresh =
+            !accessToken ||
+            (data?.expires !== undefined && shouldRefreshAccessToken(data.expires));
+
+          if (!needsRefresh && accessToken) {
+            config.headers["Authorization"] = formatToken(accessToken);
+            resolve(config);
+            return;
+          }
+
+          if (!PureHttp.isRefreshing) {
+            PureHttp.isRefreshing = true;
+            PureHttp.runRefresh(refreshToken!)
+              .then(accessToken => {
+                flushRefreshQueue(PureHttp.refreshQueue, { ok: true, accessToken });
+              })
+              .catch(async refreshError => {
+                if (extractAuthSessionTerminatedMessage(refreshError)) {
+                  tagAuthSessionTerminatedError(refreshError);
                 }
-              } else {
-                resolve(config);
-              }
-            });
+                await handleAuthSessionTerminatedIfNeeded(refreshError);
+                flushRefreshQueue(PureHttp.refreshQueue, {
+                  ok: false,
+                  error: refreshError
+                });
+              })
+              .finally(() => {
+                PureHttp.isRefreshing = false;
+              });
+          }
+
+          PureHttp.retryOriginalRequest(config)
+            .then(resolved => resolve(resolved))
+            .catch(err => reject(err));
+        });
       },
-      error => {
-        return Promise.reject(error);
-      }
+      error => Promise.reject(error)
     );
   }
 
-  /** 响应拦截 */
   private httpInterceptorsResponse(): void {
     const instance = PureHttp.axiosInstance;
     instance.interceptors.response.use(
       (response: PureHttpResponse) => {
+        const terminated = extractAuthSessionTerminatedFromBody(response.data);
+        if (terminated) {
+          const err = new AxiosError(
+            terminated,
+            AxiosError.ERR_BAD_REQUEST,
+            response.config,
+            response.request,
+            response
+          );
+          tagAuthSessionTerminatedError(err);
+          void handleAuthSessionTerminatedIfNeeded(err);
+          return Promise.reject(err);
+        }
         const $config = response.config;
-        // 优先判断post/get等方法是否传入回调，否则执行初始化设置等回调
         if (typeof $config.beforeResponseCallback === "function") {
           $config.beforeResponseCallback(response);
           return response.data;
@@ -133,16 +169,18 @@ class PureHttp {
         }
         return response.data;
       },
-      (error: PureHttpError) => {
+      async (error: PureHttpError) => {
         const $error = error;
         $error.isCancelRequest = Axios.isCancel($error);
-        void handleAuthSessionTerminatedIfNeeded($error);
+        if (extractAuthSessionTerminatedMessage($error)) {
+          tagAuthSessionTerminatedError($error);
+          await handleAuthSessionTerminatedIfNeeded($error);
+        }
         return Promise.reject($error);
       }
     );
   }
 
-  /** 通用请求工具函数 */
   public request<T>(
     method: RequestMethods,
     url: string,
@@ -156,7 +194,6 @@ class PureHttp {
       ...axiosConfig
     } as PureHttpRequestConfig;
 
-    // 单独处理自定义请求/响应回调
     return new Promise((resolve, reject) => {
       PureHttp.axiosInstance
         .request(config)
@@ -169,7 +206,6 @@ class PureHttp {
     });
   }
 
-  /** 单独抽离的`post`工具函数 */
   public post<T, P>(
     url: string,
     params?: AxiosRequestConfig<P>,
@@ -178,7 +214,6 @@ class PureHttp {
     return this.request<T>("post", url, params, config);
   }
 
-  /** 单独抽离的`get`工具函数 */
   public get<T, P>(
     url: string,
     params?: AxiosRequestConfig<P>,

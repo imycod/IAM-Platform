@@ -13,9 +13,9 @@ import { UserEntity, UserStatus } from '../../user/entities/user.entity';
 import { LoginHistoryService } from '../../login-history/services/login-history.service';
 import { LoginType } from '../../login-history/entities/login-history.entity';
 import { PortalSessionKind } from '../../session/session-kind.enum';
+import { AuthSessionSettingsService } from '../../../system/auth-session/auth-session-settings.service';
 
 const CREDENTIAL_PROVIDER = 'credential';
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface LoginContext {
   ip?: string;
@@ -45,6 +45,7 @@ export class AuthService {
     private readonly sessionService: SessionService,
     private readonly profileService: ProfileService,
     private readonly loginHistoryService: LoginHistoryService,
+    private readonly authSessionSettings: AuthSessionSettingsService,
   ) {}
 
   async register(params: {
@@ -139,7 +140,10 @@ export class AuthService {
     try {
       const user = await this.verifyCredentials(email, password);
       const token = randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+      const ttlSeconds = await this.authSessionSettings.resolvePortalSessionTtlSeconds(
+        ctx.applicationId,
+      );
+      const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
       await this.sessionService.createFromPartial({
         userId: user.id,
         kind: PortalSessionKind.PORTAL_PASSWORD,
@@ -219,5 +223,35 @@ export class AuthService {
     if (session) {
       await this.sessionService.revoke(session.id);
     }
+  }
+
+  /**
+   * 账密门户 session 滑动续期：在会话仍有效时按当前策略延长 expiresAt。
+   */
+  async refreshPortalSession(token: string): Promise<{ token: string; expiresAt: Date }> {
+    const session = await this.sessionService.findByToken(token);
+    if (!session) {
+      throw createAuthSessionTerminatedException('登录会话已失效，请重新登录');
+    }
+    if (session.expiresAt.getTime() < Date.now()) {
+      throw createAuthSessionTerminatedException('登录会话已过期，请重新登录');
+    }
+    const ttlSeconds = await this.authSessionSettings.resolvePortalSessionTtlSeconds(
+      session.applicationId,
+    );
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    await this.sessionService.update(session.id, { expiresAt: expiresAt.toISOString() });
+    return { token: session.token, expiresAt };
+  }
+
+  /** 非账密 session token 时返回 null（走 OIDC refresh） */
+  async refreshPortalSessionIfApplicable(
+    token: string,
+  ): Promise<{ token: string; expiresAt: Date } | null> {
+    const session = await this.sessionService.findByToken(token);
+    if (!session) {
+      return null;
+    }
+    return this.refreshPortalSession(token);
   }
 }

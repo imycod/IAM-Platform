@@ -9,6 +9,7 @@ import { OauthClientModule } from '../oauth-client/oauth-client.module';
 import { ApplicationModule } from '../../application/application.module';
 import { UserEntity } from '../../identity/user/entities/user.entity';
 import { LoginHistoryModule } from '../../identity/login-history/login-history.module';
+import { SystemModule } from '../../system/system.module';
 
 /**
  * node-oidc-provider 的请求处理器在 main.ts 里通过 express 的 app.use('/oidc', ...) 挂载，
@@ -20,6 +21,7 @@ import { LoginHistoryModule } from '../../identity/login-history/login-history.m
     OauthClientModule,
     ApplicationModule,
     LoginHistoryModule,
+    SystemModule,
   ],
   providers: [
     OidcService,

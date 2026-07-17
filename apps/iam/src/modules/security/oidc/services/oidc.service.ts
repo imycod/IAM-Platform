@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -15,6 +15,7 @@ import { createOidcAdapter } from '../adapters/oidc-payload.adapter';
 import { OauthClientService } from '../../oauth-client/services/oauth-client.service';
 import { DEFAULT_CONSENT_MODE } from '../../oauth-client/constants/consent-mode';
 import { ApplicationService } from '../../../application/services/application.service';
+import { AuthSessionSettingsService } from '../../../system/auth-session/auth-session-settings.service';
 
 type RequestListener = (req: unknown, res: unknown) => void;
 
@@ -40,12 +41,14 @@ type OidcGrantContext = {
  * 两者通过 IOidcInteraction 契约在 interaction 桥接点交互。
  */
 @Injectable()
-export class OidcService implements IOidcInteraction {
+export class OidcService implements IOidcInteraction, OnModuleInit {
   private readonly logger = new Logger(OidcService.name);
   private provider: OidcProvider | null = null;
   private callbackFn: RequestListener | null = null;
   /** oauth_client 变更检测：seed 新客户端后无需重启 IAM */
   private clientsSnapshot: string | null = null;
+  /** 会话策略变更检测：平台配置更新后重建 provider */
+  private settingsSnapshot: string | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -56,7 +59,19 @@ export class OidcService implements IOidcInteraction {
     private readonly oauthClientService: OauthClientService,
     private readonly applicationService: ApplicationService,
     private readonly loginHistoryService: LoginHistoryService,
+    private readonly authSessionSettings: AuthSessionSettingsService,
   ) {}
+
+  onModuleInit(): void {
+    this.authSessionSettings.registerOnChange(() => this.invalidateProvider());
+  }
+
+  invalidateProvider(): void {
+    this.provider = null;
+    this.clientsSnapshot = null;
+    this.settingsSnapshot = null;
+    this.callbackFn = null;
+  }
 
   private async buildClientsSnapshot(): Promise<string> {
     const clients = await this.oauthClientService.toOidcClients();
@@ -74,12 +89,17 @@ export class OidcService implements IOidcInteraction {
 
   async getProvider(): Promise<OidcProvider> {
     const snapshot = await this.buildClientsSnapshot();
-    if (this.provider && this.clientsSnapshot === snapshot) {
+    const settingsSnap = await this.authSessionSettings.getSnapshot();
+    if (
+      this.provider &&
+      this.clientsSnapshot === snapshot &&
+      this.settingsSnapshot === settingsSnap
+    ) {
       return this.provider;
     }
 
     if (this.provider) {
-      this.logger.log('检测到 oauth_client 变更，重新加载 node-oidc-provider');
+      this.logger.log('检测到 oauth_client 或会话策略变更，重新加载 node-oidc-provider');
       this.callbackFn = null;
     }
 
@@ -93,8 +113,11 @@ export class OidcService implements IOidcInteraction {
     // interaction 走 per-uid 路径，_interaction cookie 天然按 uid 隔离，杜绝多 client 串号。
     const issuerOrigin = new URL(issuer).origin;
     const clients = await this.oauthClientService.toOidcClients();
-    const sessionTtlRaw = this.config.get<string>('OIDC_SESSION_TTL_SECONDS');
-    const sessionTtlSeconds = sessionTtlRaw ? parseInt(sessionTtlRaw, 10) : 14 * 24 * 60 * 60;
+    const sessionPolicy = await this.authSessionSettings.getEffective();
+    const sessionTtlSeconds = sessionPolicy.oidcSessionTtlSeconds;
+    const accessTokenTtlSeconds = sessionPolicy.oidcAccessTokenTtlSeconds;
+    const refreshTokenTtlSeconds = sessionPolicy.oidcRefreshTokenTtlSeconds;
+    const authorizationCodeTtlSeconds = sessionPolicy.oidcAuthorizationCodeTtlSeconds;
 
     const mod = await dynamicImport<{
       default: new (issuer: string, config: unknown) => OidcProvider;
@@ -102,6 +125,7 @@ export class OidcService implements IOidcInteraction {
     const Provider = mod.default;
 
     this.clientsSnapshot = snapshot;
+    this.settingsSnapshot = settingsSnap;
     this.provider = new Provider(issuer, {
       adapter: createOidcAdapter(this.payloadRepo),
       clients,
@@ -153,11 +177,11 @@ export class OidcService implements IOidcInteraction {
       ttl: {
         Session: sessionTtlSeconds,
         Grant: sessionTtlSeconds,
-        AccessToken: sessionTtlSeconds,
-        IdToken: sessionTtlSeconds,
-        RefreshToken: sessionTtlSeconds,
+        AccessToken: accessTokenTtlSeconds,
+        IdToken: accessTokenTtlSeconds,
+        RefreshToken: refreshTokenTtlSeconds,
         Interaction: sessionTtlSeconds,
-        AuthorizationCode: 300,
+        AuthorizationCode: authorizationCodeTtlSeconds,
       },
       interactions: {
         // login 与 consent 统一走同源 per-uid 路径；InteractionController 在此渲染 UI。
@@ -260,7 +284,7 @@ export class OidcService implements IOidcInteraction {
     this.logger.log(
       `node-oidc-provider 已初始化, issuer=${issuer}, clients=${clients
         .map((c) => c.client_id)
-        .join(', ')}, sessionTtl=${sessionTtlSeconds}s`,
+        .join(', ')}, sessionTtl=${sessionTtlSeconds}s, accessTtl=${accessTokenTtlSeconds}s, refreshTtl=${refreshTokenTtlSeconds}s`,
     );
     return this.provider;
   }
@@ -562,5 +586,44 @@ export class OidcService implements IOidcInteraction {
       error,
       error_description: description,
     });
+  }
+
+  /** 使用 refresh_token 换取新的 access_token（公共 SPA 客户端，无 client_secret）。 */
+  async refreshAccessToken(
+    clientId: string,
+    refreshToken: string,
+  ): Promise<{ access_token: string; refresh_token?: string; expires_in: number } | null> {
+    const issuer = (this.config.get<string>('OIDC_ISSUER') ?? 'http://localhost:3000/oidc').replace(
+      /\/$/,
+      '',
+    );
+    try {
+      const res = await fetch(`${issuer}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+        }),
+      });
+      const json = (await res.json()) as Record<string, unknown>;
+      if (!res.ok) {
+        return null;
+      }
+      const accessToken = json.access_token;
+      const expiresIn = json.expires_in;
+      if (typeof accessToken !== 'string' || typeof expiresIn !== 'number') {
+        return null;
+      }
+      return {
+        access_token: accessToken,
+        refresh_token: typeof json.refresh_token === 'string' ? json.refresh_token : undefined,
+        expires_in: expiresIn,
+      };
+    } catch (error) {
+      this.logger.warn(`OIDC refresh_token 失败: ${String(error)}`);
+      return null;
+    }
   }
 }

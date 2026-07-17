@@ -39,6 +39,12 @@ async function run(): Promise<void> {
         existing.consentMode = 'first_time';
         changed = true;
       }
+      const scopeSet = new Set(existing.scopes ?? []);
+      if (!scopeSet.has('offline_access')) {
+        scopeSet.add('offline_access');
+        existing.scopes = [...scopeSet];
+        changed = true;
+      }
       if (changed) {
         await clientRepo.save(existing);
         // eslint-disable-next-line no-console
@@ -60,7 +66,7 @@ async function run(): Promise<void> {
         redirectUris: FLOW_ADMIN_SPA_REDIRECT_URIS,
         grantTypes: ['authorization_code', 'refresh_token'],
         responseTypes: ['code'],
-        scopes: ['openid', 'profile', 'email'],
+        scopes: ['openid', 'profile', 'email', 'offline_access'],
         tokenEndpointAuthMethod: 'none',
         requirePkce: true,
         consentMode: 'first_time',

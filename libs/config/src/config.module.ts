@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import { appConfig } from './configs/app.config';
+import { authSessionConfig } from './configs/auth-session.config';
 import { databaseConfig } from './configs/database.config';
 import { redisConfig } from './configs/redis.config';
 import { envValidationSchema } from './env.validation';
@@ -14,7 +15,7 @@ import { envValidationSchema } from './env.validation';
       // 环境专属文件优先于基础 .env（@nestjs/config 取数组中先出现者）。
       // NODE_ENV=stage → .env.stage；NODE_ENV=production → .env.production
       envFilePath: [`.env.${process.env.NODE_ENV}`, `.env`],
-      load: [appConfig, databaseConfig, redisConfig],
+      load: [appConfig, authSessionConfig, databaseConfig, redisConfig],
       validationSchema: envValidationSchema,
       validationOptions: {
         allowUnknown: true,

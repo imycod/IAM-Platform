@@ -24,6 +24,9 @@ import { PortalMenuService } from './portal-menu.service';
 import { PortalOrOidcGuard } from './guards/portal-or-oidc.guard';
 import { OidcBearerGuard } from '../../security/guards/oidc-bearer.guard';
 import type { VisibleMenuNode } from './user-context.service';
+import { AuthSessionSettingsService } from '../../system/auth-session/auth-session-settings.service';
+import { PortalTokenRefreshService } from './portal-token-refresh.service';
+import { PortalRefreshTokenDto } from './dto/portal-refresh-token.dto';
 
 interface AuthedRequest extends Request {
   user: { id: string };
@@ -60,6 +63,8 @@ export class PortalController {
     private readonly appRepo: Repository<ApplicationEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly authSessionSettings: AuthSessionSettingsService,
+    private readonly portalTokenRefresh: PortalTokenRefreshService,
   ) {}
 
   private async resolveApp(appCode?: string): Promise<ApplicationEntity> {
@@ -76,6 +81,7 @@ export class PortalController {
     app: ApplicationEntity,
     accessToken: string,
     refreshToken?: string,
+    sessionTtlSeconds?: number,
   ) {
     await this.applicationService.assertUserCanAccess(app.id, userId);
     const user = await this.userRepo.findOne({ where: { id: userId } });
@@ -88,6 +94,10 @@ export class PortalController {
       .filter((r) => !r.applicationId || r.applicationId === app.id)
       .map((r) => r.code);
 
+    const ttl =
+      sessionTtlSeconds ??
+      (await this.authSessionSettings.resolvePortalSessionTtlSeconds(app.id));
+
     return {
       avatar: '',
       username: user.email ?? user.id,
@@ -96,7 +106,7 @@ export class PortalController {
       permissions,
       accessToken,
       refreshToken: refreshToken ?? accessToken,
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expires: new Date(Date.now() + ttl * 1000),
       applicationId: app.id,
       applicationCode: app.code,
     };
@@ -125,7 +135,21 @@ export class PortalController {
     const app = await this.resolveApp(appCode);
     const header = req.headers.authorization ?? '';
     const accessToken = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    const data = await this.buildPortalUserData(req.user.id, app, accessToken, accessToken);
+    const { oidcAccessTokenTtlSeconds } = await this.authSessionSettings.getEffective();
+    const data = await this.buildPortalUserData(
+      req.user.id,
+      app,
+      accessToken,
+      accessToken,
+      oidcAccessTokenTtlSeconds,
+    );
+    return { success: true, data };
+  }
+
+  /** 无感刷新：SSO 走 OIDC refresh_token，账密走门户 session 滑动续期 */
+  @Post('refresh-token')
+  async refreshToken(@Body() dto: PortalRefreshTokenDto) {
+    const data = await this.portalTokenRefresh.refresh(dto.refreshToken, dto.appCode);
     return { success: true, data };
   }
 

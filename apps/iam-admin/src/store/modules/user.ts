@@ -18,6 +18,7 @@ import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 import {
   clearLocalSsoSession,
   clearOidcPkceState,
+  mergeOidcTokenRefresh,
   performGlobalLogout,
   revokeCurrentOidcAccessToken,
   skipAutoSso
@@ -121,13 +122,22 @@ export const useUserStore = defineStore("pure-user", {
       }
     },
     /** 刷新`token` */
-    async handRefreshToken(data) {
+    async handRefreshToken(data: { refreshToken: string }) {
       return new Promise<RefreshTokenResult>((resolve, reject) => {
         refreshTokenApi(data)
-          .then(data => {
-            if (data) {
-              setToken(data.data);
-              resolve(data);
+          .then(res => {
+            if (res?.data) {
+              setToken(res.data);
+              if (isSsoSession()) {
+                mergeOidcTokenRefresh({
+                  access_token: res.data.accessToken,
+                  refresh_token: res.data.refreshToken,
+                  expires: res.data.expires
+                });
+              }
+              resolve(res);
+            } else {
+              reject(new Error("刷新 token 失败"));
             }
           })
           .catch(error => {

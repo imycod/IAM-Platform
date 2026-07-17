@@ -6,6 +6,7 @@ import { UserEntity } from '../../identity/user/entities/user.entity';
 import { ApplicationModule } from '../../application/application.module';
 import { SecurityModule } from '../../security/security.module';
 import { IdentityModule } from '../../identity/identity.module';
+import { SystemModule } from '../../system/system.module';
 import { PermissionModule } from '../permission/permission.module';
 import { RoleModule } from '../role/role.module';
 import { DataPermissionModule } from '../data-permission/data-permission.module';
@@ -18,6 +19,7 @@ import { UserContextService } from './user-context.service';
 import { PortalMenuService } from './portal-menu.service';
 import { SessionBearerGuard } from './guards/session-bearer.guard';
 import { PortalOrOidcGuard } from './guards/portal-or-oidc.guard';
+import { PortalTokenRefreshService } from './portal-token-refresh.service';
 
 @Module({
   imports: [
@@ -28,6 +30,7 @@ import { PortalOrOidcGuard } from './guards/portal-or-oidc.guard';
     SecurityModule,
     ApplicationModule,
     IdentityModule,
+    SystemModule,
   ],
   controllers: [UserContextController, ApplicationRuntimeController, PortalController],
   providers: [
@@ -37,6 +40,7 @@ import { PortalOrOidcGuard } from './guards/portal-or-oidc.guard';
     OidcBearerGuard,
     SessionBearerGuard,
     PortalOrOidcGuard,
+    PortalTokenRefreshService,
   ],
 })
 export class UserContextModule {}

@@ -10,7 +10,7 @@
 
   const SHARED = {
     clientId: "iam-admin-spa",
-    scopes: "openid profile email",
+    scopes: "openid profile email offline_access",
     appCode: "iam-admin"
   };
 

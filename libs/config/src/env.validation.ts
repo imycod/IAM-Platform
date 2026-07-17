@@ -32,6 +32,14 @@ export const envValidationSchema = Joi.object({
   // OIDC（后续接入）
   OIDC_ISSUER: Joi.string().uri().optional(),
   OIDC_COOKIE_KEYS: Joi.string().optional(),
-  /** OIDC SSO Session TTL（秒），默认 14 天；测试可设 20 */
+  /** OIDC SSO Session / Grant / Interaction TTL（秒），默认 30 天 */
   OIDC_SESSION_TTL_SECONDS: Joi.number().integer().min(1).optional(),
+  /** OIDC AccessToken / IdToken TTL（秒），默认 2 小时 */
+  OIDC_ACCESS_TOKEN_TTL_SECONDS: Joi.number().integer().min(1).optional(),
+  /** OIDC RefreshToken TTL（秒），默认 30 天，应 ≥ access */
+  OIDC_REFRESH_TOKEN_TTL_SECONDS: Joi.number().integer().min(1).optional(),
+  /** 账密门户 session TTL（秒），默认 7 天；可被平台 system_config 覆盖 */
+  PORTAL_SESSION_TTL_SECONDS: Joi.number().integer().min(1).optional(),
+  /** OIDC 授权码 TTL（秒），默认 300 */
+  OIDC_AUTHORIZATION_CODE_TTL_SECONDS: Joi.number().integer().min(1).optional(),
 });

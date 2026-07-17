@@ -21,4 +21,8 @@ export class ApplicationEntity extends BaseEntity {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   description: string | null;
+
+  /** 账密门户 session 有效期（秒）；NULL 时使用全局默认策略 */
+  @Column({ type: 'int', nullable: true, name: 'portal_session_ttl_seconds' })
+  portalSessionTtlSeconds: number | null;
 }

@@ -11,7 +11,7 @@ export interface IamClientConfig {
 
 const SHARED = {
   clientId: "iam-admin-spa",
-  scopes: "openid profile email",
+  scopes: "openid profile email offline_access",
   appCode: "iam-admin"
 } as const;
 
@@ -286,6 +286,40 @@ export async function revokeCurrentOidcAccessToken(
   } catch {
     // ignore
   }
+}
+
+/** SSO 无感刷新后同步 localStorage 中的 OIDC token 包（供全局登出等使用） */
+export function mergeOidcTokenRefresh(payload: {
+  access_token: string;
+  refresh_token?: string;
+  expires?: Date | string | number;
+}): void {
+  const raw = localStorage.getItem(STORAGE_TOKENS);
+  let prev: Record<string, unknown> = {};
+  if (raw) {
+    try {
+      prev = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      prev = {};
+    }
+  }
+  const expiresMs =
+    payload.expires !== undefined
+      ? typeof payload.expires === "number"
+        ? payload.expires
+        : new Date(payload.expires).getTime()
+      : undefined;
+  const expiresIn =
+    expiresMs !== undefined
+      ? Math.max(1, Math.round((expiresMs - Date.now()) / 1000))
+      : undefined;
+  const next = {
+    ...prev,
+    access_token: payload.access_token,
+    ...(payload.refresh_token ? { refresh_token: payload.refresh_token } : {}),
+    ...(expiresIn !== undefined ? { expires_in: expiresIn } : {})
+  };
+  localStorage.setItem(STORAGE_TOKENS, JSON.stringify(next));
 }
 
 /** RP-Initiated Logout：销毁 IdP SSO 会话并通知其它已登录应用 */

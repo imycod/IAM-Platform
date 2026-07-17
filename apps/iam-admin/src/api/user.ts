@@ -1,5 +1,6 @@
 import { http } from "@/utils/http";
 import { unwrapPortalResponse } from "@/utils/iam-api";
+import { handleAuthSessionTerminatedIfNeeded } from "@/utils/auth-session-terminated";
 
 export type UserResult = {
   success: boolean;
@@ -51,7 +52,22 @@ export const getLogin = (data?: object) => {
     });
 };
 
-/** 刷新`token` */
-export const refreshTokenApi = (data?: object) => {
-  return http.request<RefreshTokenResult>("post", "/refresh-token", { data });
+/** 刷新 access_token（IAM 门户：OIDC refresh_token 或账密 session 续期） */
+export const refreshTokenApi = (data: { refreshToken: string }) => {
+  return http
+    .request<{ success?: boolean; data?: RefreshTokenResult["data"] }>(
+      "post",
+      "/api/portal/refresh-token",
+      {
+        data: { ...data, appCode: "iam-admin" }
+      }
+    )
+    .then(body => {
+      const payload = unwrapPortalResponse<RefreshTokenResult["data"]>(body);
+      return { success: true, data: payload } as RefreshTokenResult;
+    })
+    .catch(async error => {
+      await handleAuthSessionTerminatedIfNeeded(error);
+      return Promise.reject(error);
+    });
 };

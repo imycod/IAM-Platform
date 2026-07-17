@@ -1,6 +1,7 @@
 import Cookies from "js-cookie";
 import { useUserStoreHook } from "@/store/modules/user";
 import { storageLocal, isString, isIncludeAllChildren } from "@pureadmin/utils";
+import { resetAuthSessionTerminatedState } from "@/utils/auth-session-terminated";
 import { TokenKey, multipleTabsKey } from "@/utils/auth-cookie-keys";
 
 export { TokenKey, multipleTabsKey };
@@ -26,12 +27,31 @@ export interface DataInfo<T> {
 
 export const userKey = "user-info";
 
-/** 获取`token` */
-export function getToken(): DataInfo<number> {
-  // 此处与`TokenKey`相同，此写法解决初始化时`Cookies`中不存在`TokenKey`报错
-  return Cookies.get(TokenKey)
-    ? JSON.parse(Cookies.get(TokenKey))
-    : storageLocal().getItem(userKey);
+/** 获取`token`（Cookie 过期时从 localStorage 补全 accessToken，避免裸请求） */
+export function getToken(): DataInfo<number> | null {
+  let fromCookie: DataInfo<number> | null = null;
+  const rawCookie = Cookies.get(TokenKey);
+  if (rawCookie) {
+    try {
+      fromCookie = JSON.parse(rawCookie) as DataInfo<number>;
+    } catch {
+      fromCookie = null;
+    }
+  }
+  const fromLs = storageLocal().getItem<DataInfo<number>>(userKey);
+
+  if (fromCookie?.accessToken) {
+    return fromCookie;
+  }
+  if (fromLs?.accessToken && fromLs.refreshToken) {
+    return {
+      ...fromLs,
+      accessToken: fromLs.accessToken,
+      refreshToken: fromLs.refreshToken,
+      expires: fromLs.expires
+    };
+  }
+  return fromCookie ?? fromLs ?? null;
 }
 
 /**
@@ -41,6 +61,7 @@ export function getToken(): DataInfo<number> {
  * 将`avatar`、`username`、`nickname`、`roles`、`permissions`、`refreshToken`、`expires`这七条信息放在key值为`user-info`的localStorage里（利用`multipleTabsKey`当浏览器完全关闭后自动销毁）
  */
 export function setToken(data: DataInfo<Date>) {
+  resetAuthSessionTerminatedState();
   let expires = 0;
   const { accessToken, refreshToken } = data;
   const { isRemembered, loginDay } = useUserStoreHook();
@@ -70,6 +91,7 @@ export function setToken(data: DataInfo<Date>) {
     useUserStoreHook().SET_ROLES(roles);
     useUserStoreHook().SET_PERMS(permissions);
     storageLocal().setItem(userKey, {
+      accessToken,
       refreshToken,
       expires,
       avatar,

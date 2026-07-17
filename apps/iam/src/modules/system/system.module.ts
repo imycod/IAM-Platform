@@ -6,27 +6,10 @@ import { DictionaryEntity } from './dictionary/entities/dictionary.entity';
 import { DictionaryItemEntity } from './dictionary/entities/dictionary-item.entity';
 import { ParameterEntity } from './parameter/entities/parameter.entity';
 import { ScheduledJobEntity } from './scheduler/entities/scheduled-job.entity';
-
-@Injectable()
-export class SystemConfigService {
-  constructor(
-    @InjectRepository(SystemConfigEntity)
-    private readonly repo: Repository<SystemConfigEntity>,
-  ) {}
-
-  async get(key: string): Promise<string | null> {
-    const row = await this.repo.findOne({ where: { configKey: key } });
-    return row?.configValue ?? null;
-  }
-
-  set(data: Partial<SystemConfigEntity>): Promise<SystemConfigEntity> {
-    return this.repo.save(this.repo.create(data));
-  }
-
-  listPublic(): Promise<SystemConfigEntity[]> {
-    return this.repo.find({ where: { isPublic: true } });
-  }
-}
+import { ApplicationEntity } from '../application/application/entities/application.entity';
+import { SystemConfigService } from './system-config.service';
+import { AuthSessionSettingsService } from './auth-session/auth-session-settings.service';
+import { AuthSessionSettingsController } from './auth-session/auth-session-settings.controller';
 
 @Injectable()
 export class DictionaryService {
@@ -74,10 +57,11 @@ export class HealthController {
       DictionaryItemEntity,
       ParameterEntity,
       ScheduledJobEntity,
+      ApplicationEntity,
     ]),
   ],
-  controllers: [HealthController],
-  providers: [SystemConfigService, DictionaryService],
-  exports: [SystemConfigService, DictionaryService],
+  controllers: [HealthController, AuthSessionSettingsController],
+  providers: [SystemConfigService, DictionaryService, AuthSessionSettingsService],
+  exports: [SystemConfigService, DictionaryService, AuthSessionSettingsService],
 })
 export class SystemModule {}

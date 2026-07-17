@@ -82,7 +82,6 @@ export function useSsoLoginPage(onEnterApp: () => void) {
   }
 
   async function onManualSsoLogin() {
-    debugger
     if (redirecting || ssoBusy.value) {
       return;
     }
@@ -94,7 +93,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
   onMounted(async () => {
     document.addEventListener("visibilitychange", onTabVisible);
     window.addEventListener("focus", onTabVisible);
-    debugger
+
     if (hasLocalSession()) {
       if (isSsoSession()) {
         markSsoLoginComplete();
@@ -105,6 +104,7 @@ export function useSsoLoginPage(onEnterApp: () => void) {
 
     const routeQuery = getLoginRouteQuery();
     if (routeQuery.get("sso_error") === "access_denied") {
+      skipAutoSso();
       statusText.value = "您已拒绝授权，请重新点击 IAM 登录。";
       phase.value = "ready";
       return;

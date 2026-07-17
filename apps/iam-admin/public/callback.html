@@ -3,25 +3,203 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>iam-client · SSO 回调</title>
+  <title>SSO 登录 · 回调</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
-    .err { color: #c00; }
+    :root {
+      --bg-top: #eef2ff;
+      --bg-bottom: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --border: #e2e8f0;
+      --shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      background: linear-gradient(160deg, var(--bg-top) 0%, var(--bg-bottom) 55%, #ffffff 100%);
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 32px 28px 28px;
+      text-align: center;
+    }
+    .card.is-error {
+      border-color: #fecaca;
+      background: linear-gradient(180deg, #fff 0%, var(--danger-bg) 100%);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 52px;
+      margin-bottom: 16px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      color: #fff;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .card.is-error .brand {
+      background: linear-gradient(135deg, #f87171, var(--danger));
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.25rem;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .msg {
+      margin: 0;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    .msg.err { color: var(--danger); }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      margin: 20px auto 0;
+      border: 3px solid #e2e8f0;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    .spinner[hidden] { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .actions {
+      display: none;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 24px;
+    }
+    .actions.visible { display: flex; }
+    .btn {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 10px 18px;
+      border-radius: 10px;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-ghost {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: #f8fafc; }
+    .hint {
+      margin-top: 16px;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
-  <h1>正在完成 SSO 登录…</h1>
-  <p id="msg">交换 access_token 中</p>
+  <main class="card" id="card">
+    <div class="brand" id="brand" aria-hidden="true">SSO</div>
+    <h1 id="title">正在完成 SSO 登录…</h1>
+    <p class="msg" id="msg">正在验证授权并同步会话，请稍候</p>
+    <div class="spinner" id="spinner" role="status" aria-label="加载中"></div>
+    <div class="actions" id="actions">
+      <button type="button" class="btn btn-primary" id="btn-login">返回登录页</button>
+      <button type="button" class="btn btn-ghost" id="btn-back">返回上一页</button>
+    </div>
+    <p class="hint" id="hint" hidden>若您已在其他应用登录，可关闭本页或返回已授权的应用继续使用。</p>
+  </main>
 
   <script src="config.js"></script>
   <script src="pkce-sha256.js"></script>
   <script src="oidc.js"></script>
   <script>
+    (function () {
+      const card = document.getElementById("card");
+      const titleEl = document.getElementById("title");
+      const msgEl = document.getElementById("msg");
+      const spinnerEl = document.getElementById("spinner");
+      const actionsEl = document.getElementById("actions");
+      const hintEl = document.getElementById("hint");
+      const brandEl = document.getElementById("brand");
+
+      document.getElementById("btn-login").addEventListener("click", function () {
+        IamClientOidc.skipAutoSso();
+        window.location.replace("/#/login");
+      });
+      document.getElementById("btn-back").addEventListener("click", function () {
+        IamClientOidc.skipAutoSso();
+        if (window.history.length > 1) {
+          window.history.back();
+        } else {
+          window.location.replace("/#/login");
+        }
+      });
+
+      function humanizeError(raw) {
+        if (!raw) return "登录未能完成，请重试。";
+        const s = String(raw);
+        if (
+          s.indexOf("application_user") !== -1 ||
+          s.indexOf("无权访问该应用") !== -1
+        ) {
+          return "您尚未被授权访问此应用。请联系管理员开通访问权限后，再从登录页重新进入。";
+        }
+        if (s.indexOf("state") !== -1 && s.indexOf("校验") !== -1) {
+          return "无法完成自动登录（授权状态已失效或不属于当前应用）。请关闭本页，或从您已登录的应用重新进入。";
+        }
+        return s;
+      }
+
+      window.showCallbackError = function (title, detail) {
+        IamClientOidc.skipAutoSso();
+        card.classList.add("is-error");
+        brandEl.textContent = "!";
+        titleEl.textContent = title || "登录未完成";
+        msgEl.textContent = humanizeError(detail);
+        msgEl.classList.add("err");
+        spinnerEl.hidden = true;
+        actionsEl.classList.add("visible");
+        hintEl.hidden = false;
+      };
+
+      window.setCallbackLoading = function (title, detail) {
+        titleEl.textContent = title || "正在完成 SSO 登录…";
+        msgEl.textContent = detail || "正在验证授权并同步会话，请稍候";
+        msgEl.classList.remove("err");
+      };
+    })();
+
     (async function () {
       const cfg = window.IAM_CLIENT_CONFIG;
       if (!cfg || !cfg.oidcIssuer) {
-        document.getElementById("msg").innerHTML =
-          '<span class="err">缺少 IAM_CLIENT_CONFIG，请检查 config.js</span>';
+        showCallbackError("配置错误", "缺少 IAM_CLIENT_CONFIG，请检查 config.js");
         return;
       }
       const params = new URLSearchParams(window.location.search);
@@ -42,36 +220,39 @@
           return;
         }
         if (error === "access_denied") {
+          IamClientOidc.skipAutoSso();
           window.location.replace("/#/login?sso_error=access_denied");
           return;
         }
-        document.getElementById("msg").innerHTML =
-          '<span class="err">授权失败: ' + error + "</span>";
+        showCallbackError("授权失败", error);
         return;
       }
 
       const saved = IamClientOidc.getSavedState();
       if (!state || (!IamClientOidc.hasPendingAuth(state) && state !== saved)) {
-        document.getElementById("msg").innerHTML =
-          '<span class="err">state 校验失败</span>';
+        showCallbackError(
+          "无法完成自动登录",
+          "state 校验失败：可能是其它应用触发了 SSO 回调，而当前浏览器未发起对应登录。"
+        );
         return;
       }
       if (!code) {
-        document.getElementById("msg").innerHTML =
-          '<span class="err">缺少 authorization code</span>';
+        showCallbackError("参数缺失", "缺少 authorization code");
         return;
       }
+
+      setCallbackLoading("正在完成 SSO 登录…", "正在交换访问凭证…");
 
       try {
         const tokens = await IamClientOidc.exchangeCode(cfg, code, state);
         IamClientOidc.clearSavedState(state);
+        setCallbackLoading("登录成功", "正在进入系统…");
         const bootstrap = await IamClientOidc.fetchOidcBootstrap(cfg, tokens.access_token);
         IamClientOidc.persistPortalSession(bootstrap, tokens);
         window.location.replace("/");
       } catch (e) {
         IamClientOidc.clearSavedState(state);
-        document.getElementById("msg").innerHTML =
-          '<span class="err">' + (e.message || e) + "</span>";
+        showCallbackError("登录失败", e.message || e);
       }
     })();
   </script>

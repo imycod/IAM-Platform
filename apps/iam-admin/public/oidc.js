@@ -4,6 +4,7 @@
   const STORAGE_STATE = "iam_client_oauth_state";
   const REDIRECT_LOCK = "iam_client_oidc_redirecting";
   const STORAGE_TOKENS = "iam_client_oidc_tokens";
+  const SKIP_SSO_KEY = "iam_client_skip_auto_sso";
   const REDIRECT_LOCK_TTL_MS = 120000;
 
   /** PKCE 跨 Tab 共享（同 origin 多 Tab SSO 回调） */
@@ -207,6 +208,14 @@
     return state && pkceStore().getItem(`${STORAGE_SILENT_PREFIX}${state}`) === "1";
   }
 
+  function skipAutoSso() {
+    sessionStorage.setItem(SKIP_SSO_KEY, "1");
+  }
+
+  function clearSkipAutoSso() {
+    sessionStorage.removeItem(SKIP_SSO_KEY);
+  }
+
   async function fetchOidcBootstrap(cfg, accessToken) {
     const url = new URL(`${cfg.iamBaseUrl}/api/portal/oidc-bootstrap`);
     url.searchParams.set("appCode", cfg.appCode);
@@ -265,6 +274,8 @@
     hasPendingAuth,
     clearSavedState,
     isSilentState,
+    skipAutoSso,
+    clearSkipAutoSso,
     fetchOidcBootstrap,
     persistPortalSession
   };

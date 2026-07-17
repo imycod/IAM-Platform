@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { resolveInteractionUiDir } from './interaction-ui.paths';
 import {
   Controller,
+  ForbiddenException,
   Get,
   Inject,
   Optional,
@@ -11,6 +12,8 @@ import {
   Req,
   Res,
   ServiceUnavailableException,
+  UnauthorizedException,
+  HttpException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
@@ -81,6 +84,52 @@ function resolveAppReturnUrlFromRedirectUri(redirectUri: string | undefined): st
   } catch {
     return null;
   }
+}
+
+/** 将认证/进门错误映射为登录页可展示的 error code（勿把应用权限误报成密码错误）。 */
+function readHttpErrorMessage(err: unknown): string {
+  if (err instanceof HttpException) {
+    const body = err.getResponse();
+    if (typeof body === 'string') {
+      return body;
+    }
+    if (body && typeof body === 'object' && 'message' in body) {
+      const msg = (body as { message?: string | string[] }).message;
+      if (Array.isArray(msg)) {
+        return msg.join(' ');
+      }
+      if (typeof msg === 'string') {
+        return msg;
+      }
+    }
+  }
+  return String((err as Error)?.message ?? '');
+}
+
+function resolveInteractionLoginErrorCode(err: unknown): string {
+  const msg = readHttpErrorMessage(err);
+  if (err instanceof ForbiddenException) {
+    if (msg.includes('无权访问') || msg.includes('application_user')) {
+      return 'app_access_denied';
+    }
+    return 'forbidden';
+  }
+  if (err instanceof UnauthorizedException) {
+    if (msg.includes('账号不存在')) {
+      return 'account_not_found';
+    }
+    if (msg.includes('禁用')) {
+      return 'account_disabled';
+    }
+    if (msg.includes('锁定')) {
+      return 'account_locked';
+    }
+    if (msg.includes('待激活')) {
+      return 'account_pending';
+    }
+    return 'invalid_credentials';
+  }
+  return 'login_failed';
 }
 
 interface InteractionBootstrap {
@@ -273,8 +322,23 @@ export class InteractionController {
 
     // 已有 IAM SSO 会话：直接完成 login interaction（静默 SSO / 跨 tab 续登）
     if (details.prompt?.name === 'login' && details.session?.accountId) {
-      await oidc.finishLogin(req, res, { accountId: details.session.accountId, remember: true }, uid);
-      return;
+      try {
+        await oidc.finishLogin(
+          req,
+          res,
+          { accountId: details.session.accountId, remember: true },
+          uid,
+        );
+        return;
+      } catch (err) {
+        if (this.isInvalidInteractionError(err)) {
+          this.renderExpiredPage(res);
+          return;
+        }
+        const code = resolveInteractionLoginErrorCode(err);
+        this.renderInteractionPage(res, 'login', await this.buildBootstrap('login', details, code));
+        return;
+      }
     }
 
     this.renderInteractionPage(res, 'login', await this.buildBootstrap('login', details, error));
@@ -307,7 +371,7 @@ export class InteractionController {
         res.redirect(this.interactionUrl(uid, 'interaction_expired'));
         return;
       }
-      res.redirect(this.interactionUrl(uid, 'invalid_credentials'));
+      res.redirect(this.interactionUrl(uid, resolveInteractionLoginErrorCode(err)));
     }
   }
 

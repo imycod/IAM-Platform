@@ -79,7 +79,7 @@ export class AuthService {
   async verifyCredentials(email: string, password: string): Promise<UserEntity> {
     const user = await this.userRepository.findByEmail(email);
     if (!user) {
-      throw new UnauthorizedException('账号或密码错误');
+      throw new UnauthorizedException('账号不存在');
     }
     if (user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException(this.resolveStatusLoginMessage(user.status));

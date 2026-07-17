@@ -386,11 +386,29 @@ const interactionUid = interaction.uid || null;
 const loginErrorCode = interaction.error || null;
 
 const ERROR_MESSAGES = {
-  invalid_credentials: 'Invalid email or password. Please try again.',
-  missing_credentials: 'Please enter your email and password.',
-  missing_uid: 'Invalid login session. Please start sign-in from your application again.',
-  interaction_expired: 'Login session expired. Please return to your app and sign in again.',
+  invalid_credentials: '密码不正确，请重试。',
+  account_not_found: '账号不存在，请检查邮箱或联系管理员。',
+  missing_credentials: '请输入邮箱和密码。',
+  missing_uid: '登录会话无效，请从应用重新发起登录。',
+  interaction_expired: '登录会话已过期，请返回应用后重新登录。',
+  app_access_denied:
+    '您的账号尚未被授权访问此应用，请联系管理员开通应用访问权限。',
+  account_disabled: '账号已禁用，请联系管理员。',
+  account_locked: '账号已锁定，请联系管理员。',
+  account_pending: '账号待激活，请联系管理员开通登录。',
+  forbidden: '无法完成登录，请稍后重试或联系管理员。',
+  login_failed: '登录失败，请稍后重试。',
 };
+
+/** 此类错误下浏览器已有 IAM SSO 会话，禁止 trySsoContinue 以免反复跳授权。 */
+const SSO_CONTINUE_BLOCK_ERRORS = new Set([
+  'app_access_denied',
+  'account_not_found',
+  'account_disabled',
+  'account_locked',
+  'account_pending',
+  'forbidden',
+]);
 
 function showLoginError(message) {
   const errEl = document.getElementById('error-msg');
@@ -454,18 +472,24 @@ function initOidcLoginPage() {
     return;
   }
   if (loginErrorCode) {
-    showLoginError(ERROR_MESSAGES[loginErrorCode] || 'Login failed. Please try again.');
+    showLoginError(
+      ERROR_MESSAGES[loginErrorCode] || '登录失败，请稍后重试。',
+    );
   }
-  void trySsoContinue();
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void trySsoContinue();
-  });
-  window.addEventListener('focus', () => {
+  const blockSsoContinue =
+    loginErrorCode && SSO_CONTINUE_BLOCK_ERRORS.has(loginErrorCode);
+  if (!blockSsoContinue) {
     void trySsoContinue();
-  });
-  setInterval(() => {
-    if (!document.hidden) void trySsoContinue();
-  }, 2500);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void trySsoContinue();
+    });
+    window.addEventListener('focus', () => {
+      void trySsoContinue();
+    });
+    setInterval(() => {
+      if (!document.hidden) void trySsoContinue();
+    }, 2500);
+  }
 }
 
 initOidcLoginPage();

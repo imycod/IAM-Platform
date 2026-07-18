@@ -16,7 +16,7 @@ import { buildAccessRoleCode } from '../../modules/application/application-role/
 const APP_CODE = 'iam-admin';
 const CREDENTIAL_PROVIDER = 'credential';
 const DEFAULT_ADMIN_EMAIL = 'admin@qq.com';
-const APP_ROLE_CODE = 'admin';
+const APP_ROLE_CODE = 'manager';
 
 /**
  * 为指定用户分配 iam-admin 应用的 admin 角色（访问角色 iam_admin:admin）。

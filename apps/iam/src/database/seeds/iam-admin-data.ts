@@ -206,14 +206,14 @@ async function run(): Promise<void> {
     }
 
     const appRoleExists = await appRoleRepo.findOne({
-      where: { applicationId: app.id, code: 'super_admin' },
+      where: { applicationId: app.id, code: 'manager' },
     });
     if (!appRoleExists) {
       await appRoleRepo.save(
         appRoleRepo.create({
           applicationId: app.id,
           name: '超级管理员',
-          code: 'super_admin',
+          code: 'manager',
         }),
       );
     }

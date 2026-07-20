@@ -17,28 +17,28 @@ export class OauthClientEntity extends BaseEntity {
   applicationId: string;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 100 })
+  @Column({ type: 'varchar', length: 100, comment: '应用标识，如 internal-oa' })
   clientId: string;
 
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 255, comment: '应用密钥，要加密存储' })
   clientSecret: string;
 
-  @Column({ type: 'json' })
+  @Column({ type: 'json', comment: '允许的回跳地址，如 ["http://localhost:8080/callback.html"]' })
   redirectUris: string[];
 
-  @Column({ type: 'json' })
+  @Column({ type: 'json', comment: '允许的授权类型，如 ["authorization_code", "refresh_token"]' })
   grantTypes: string[];
 
-  @Column({ type: 'json' })
+  @Column({ type: 'json', comment: '允许的响应类型，如 ["code", "token"]' })
   responseTypes: string[];
 
-  @Column({ type: 'json' })
+  @Column({ type: 'json', comment: '允许的授权范围，如 ["openid", "profile", "email"]' })
   scopes: string[];
 
-  @Column({ type: 'varchar', length: 50, default: 'client_secret_basic' })
+  @Column({ type: 'varchar', length: 50, default: 'client_secret_basic', comment: 'token 端点认证方法' })
   tokenEndpointAuthMethod: string;
 
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: true, comment: '是否需要 PKCE' })
   requirePkce: boolean;
 
   /** 授权确认策略：never 自动跳过；first_time 首次授权需确认；always 每次均需确认。 */

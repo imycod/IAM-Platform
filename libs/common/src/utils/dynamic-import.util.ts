@@ -8,6 +8,15 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
   specifier: string,
 ) => Promise<T>;
 
+const cache = new Map<string, Promise<unknown>>();
+
+export function dynamicImportWithCache<T = unknown>(specifier: string): Promise<T> {
+  if (!cache.has(specifier)) {
+    cache.set(specifier, nativeDynamicImport<T>(specifier));
+  }
+  return cache.get(specifier) as Promise<T>;
+}
+
 export function dynamicImport<T = unknown>(specifier: string): Promise<T> {
   return nativeDynamicImport<T>(specifier);
 }

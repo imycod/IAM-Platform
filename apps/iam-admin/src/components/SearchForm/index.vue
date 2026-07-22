@@ -49,7 +49,7 @@
   </div>
 </template>
 
-<script setup lang="ts" name="SearchForm">
+<script setup lang="ts">
 import { computed, ref } from "vue";
 import { ColumnProps } from "@/components/ProTable/interface";
 import { BreakPoint } from "@/components/Grid/interface";
@@ -61,6 +61,8 @@ import QuestionFilled from "~icons/ep/question-filled";
 import SearchFormItem from "./components/SearchFormItem.vue";
 import Grid from "@/components/Grid/index.vue";
 import GridItem from "@/components/Grid/components/GridItem.vue";
+
+defineOptions({ name: "SearchForm" });
 
 interface SearchFormProps {
   columns?: ColumnProps[];

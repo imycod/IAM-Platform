@@ -4,9 +4,11 @@
   </div>
 </template>
 
-<script setup lang="ts" name="GridItem">
+<script setup lang="ts">
 import { computed, inject, Ref, ref, useAttrs, watch } from "vue";
 import { BreakPoint, Responsive } from "../interface/index";
+
+defineOptions({ name: "GridItem" });
 
 type Props = {
   offset?: number;

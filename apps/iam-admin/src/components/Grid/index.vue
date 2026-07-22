@@ -4,7 +4,7 @@
   </div>
 </template>
 
-<script setup lang="ts" name="Grid">
+<script setup lang="ts">
 import {
   ref,
   watch,
@@ -20,6 +20,8 @@ import {
   VNode
 } from "vue";
 import type { BreakPoint } from "./interface/index";
+
+defineOptions({ name: "Grid" });
 
 type Props = {
   cols?: number | Record<BreakPoint, number>;
@@ -86,29 +88,55 @@ const gridCols = computed<number>(() => {
 });
 provide("cols", gridCols);
 
-const slots = useSlots().default!();
+/** 是否为带 suffix 的操作按钮列（不依赖组件 name，script setup 下 name 可能拿不到） */
+const isSuffixItem = (slot: VNode) => {
+  const suffix = slot.props?.suffix;
+  return suffix !== undefined && suffix !== false;
+};
+
+// useSlots 只能在 setup 同步调用；findIndex 里再执行 default() 取最新 VNode
+const slots = useSlots();
 
 const findIndex = () => {
+  const slotNodes = slots.default?.() ?? [];
   const fields: VNodeArrayChildren = [];
   let suffix: VNode | null = null;
-  slots.forEach((slot: any) => {
-    if (typeof slot.type === "object" && slot.type.name === "GridItem" && slot.props?.suffix !== undefined)
-      suffix = slot;
-    if (typeof slot.type === "symbol" && Array.isArray(slot.children)) fields.push(...slot.children);
+
+  slotNodes.forEach((slot: any) => {
+    if (isSuffixItem(slot)) suffix = slot;
+    // v-for 会包一层 Fragment
+    if (typeof slot.type === "symbol" && Array.isArray(slot.children)) {
+      fields.push(
+        ...slot.children.filter(
+          (child: any) => child && typeof child === "object" && !isSuffixItem(child)
+        )
+      );
+    } else if (slot && typeof slot === "object" && !isSuffixItem(slot)) {
+      fields.push(slot);
+    }
   });
 
+  // 折叠时给搜索/重置/展开预留列，否则表单项会占满整行把按钮挤下去
   let suffixCols = 0;
   if (suffix) {
     suffixCols =
-      ((suffix as VNode).props![breakPoint.value]?.span ?? (suffix as VNode).props?.span ?? 1) +
-      ((suffix as VNode).props![breakPoint.value]?.offset ?? (suffix as VNode).props?.offset ?? 0);
+      ((suffix as VNode).props![breakPoint.value]?.span ??
+        (suffix as VNode).props?.span ??
+        1) +
+      ((suffix as VNode).props![breakPoint.value]?.offset ??
+        (suffix as VNode).props?.offset ??
+        0);
   }
   try {
     let find = false;
     fields.reduce((prev = 0, current, index) => {
       prev +=
-        ((current as VNode)!.props![breakPoint.value]?.span ?? (current as VNode)!.props?.span ?? 1) +
-        ((current as VNode)!.props![breakPoint.value]?.offset ?? (current as VNode)!.props?.offset ?? 0);
+        ((current as VNode)!.props![breakPoint.value]?.span ??
+          (current as VNode)!.props?.span ??
+          1) +
+        ((current as VNode)!.props![breakPoint.value]?.offset ??
+          (current as VNode)!.props?.offset ??
+          0);
       if (Number(prev) > props.collapsedRows * gridCols.value - suffixCols) {
         hiddenIndex.value = index;
         find = true;

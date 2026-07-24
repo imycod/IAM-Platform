@@ -111,6 +111,10 @@
       throw new Error(json.error_detail || json.error_description || json.error || "换 token 失败");
     }
 
+    if (json.id_token && global.IamClientOidcJwks) {
+      await global.IamClientOidcJwks.verifyIdToken(json.id_token, cfg);
+    }
+
     store.removeItem(`${STORAGE_VERIFIER_PREFIX}${state}`);
     store.removeItem(`${STORAGE_SILENT_PREFIX}${state}`);
     releaseRedirectLock();

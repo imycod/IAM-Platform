@@ -53,6 +53,9 @@ exports.envValidationSchema = Joi.object({
     BETTER_AUTH_URL: Joi.string().uri().optional(),
     OIDC_ISSUER: Joi.string().uri().optional(),
     OIDC_COOKIE_KEYS: Joi.string().optional(),
+    OIDC_JWKS: Joi.string().optional(),
+    OIDC_JWKS_FILE: Joi.string().optional(),
+    OIDC_JWKS_DEV_FILE: Joi.string().optional(),
     OIDC_SESSION_TTL_SECONDS: Joi.number().integer().min(1).optional(),
 });
 //# sourceMappingURL=env.validation.js.map

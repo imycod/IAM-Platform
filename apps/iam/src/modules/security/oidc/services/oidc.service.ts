@@ -16,6 +16,8 @@ import { OauthClientService } from '../../oauth-client/services/oauth-client.ser
 import { DEFAULT_CONSENT_MODE } from '../../oauth-client/constants/consent-mode';
 import { ApplicationService } from '../../../application/services/application.service';
 import { AuthSessionSettingsService } from '../../../system/auth-session/auth-session-settings.service';
+import { loadOidcJwks } from '../jwks/load-oidc-jwks';
+import type { OidcJwks } from '../jwks/oidc-jwks.types';
 
 type RequestListener = (req: unknown, res: unknown) => void;
 
@@ -45,6 +47,8 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
   private readonly logger = new Logger(OidcService.name);
   private provider: OidcProvider | null = null;
   private callbackFn: RequestListener | null = null;
+  /** 显式 RSA JWKS（私钥）；keys[0] 用于签发 ID Token */
+  private jwks: OidcJwks | null = null;
   /** oauth_client 变更检测：seed 新客户端后无需重启 IAM */
   private clientsSnapshot: string | null = null;
   /** 会话策略变更检测：平台配置更新后重建 provider */
@@ -71,6 +75,19 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
     this.clientsSnapshot = null;
     this.settingsSnapshot = null;
     this.callbackFn = null;
+  }
+
+  /** 重新从 OIDC_JWKS / OIDC_JWKS_FILE 加载密钥（手动轮换写文件后可调用，无需整进程重启）。 */
+  reloadJwks(): void {
+    this.jwks = loadOidcJwks();
+    this.invalidateProvider();
+  }
+
+  private getJwks(): OidcJwks {
+    if (!this.jwks) {
+      this.jwks = loadOidcJwks();
+    }
+    return this.jwks;
   }
 
   private async buildClientsSnapshot(): Promise<string> {
@@ -126,8 +143,11 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
 
     this.clientsSnapshot = snapshot;
     this.settingsSnapshot = settingsSnap;
+    const jwks = this.getJwks();
     this.provider = new Provider(issuer, {
       adapter: createOidcAdapter(this.payloadRepo),
+      // 显式私钥 JWKS：签发 ID Token 等 JWT；公钥经 /oidc/jwks 暴露给客户端验签/轮换
+      jwks,
       clients,
       claims: {
         openid: ['sub'],
@@ -284,7 +304,9 @@ export class OidcService implements IOidcInteraction, OnModuleInit {
     this.logger.log(
       `node-oidc-provider 已初始化, issuer=${issuer}, clients=${clients
         .map((c) => c.client_id)
-        .join(', ')}, sessionTtl=${sessionTtlSeconds}s, accessTtl=${accessTokenTtlSeconds}s, refreshTtl=${refreshTokenTtlSeconds}s`,
+        .join(', ')}, sessionTtl=${sessionTtlSeconds}s, accessTtl=${accessTokenTtlSeconds}s, refreshTtl=${refreshTokenTtlSeconds}s, jwksKids=${jwks.keys
+        .map((k) => k.kid)
+        .join('|')}, signingKid=${jwks.keys[0]?.kid}`,
     );
     return this.provider;
   }

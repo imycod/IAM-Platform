@@ -28,6 +28,7 @@ services:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 123456
+      TZ: Asia/Shanghai
     volumes:
       - mysql-data:/var/lib/mysql
     restart: unless-stopped
@@ -36,6 +37,7 @@ services:
     command:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
+      --default-time-zone=+08:00
 
   redis:
     image: redis:7.4

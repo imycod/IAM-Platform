@@ -21,6 +21,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-iam}
       TZ: Asia/Shanghai
+    command:
+      - --default-time-zone=+08:00
     ports:
       - "${MYSQL_PUBLISH_PORT:-3308}:3306"
     volumes:

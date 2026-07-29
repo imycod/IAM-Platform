@@ -3,11 +3,21 @@ import { Notification } from '@arco-design/web-vue';
 import type { NotificationReturn } from '@arco-design/web-vue/es/notification/interface';
 import type { RouteRecordNormalized } from 'vue-router';
 import defaultSettings from '@/config/settings.json';
-import { getMenuList } from '@/api/user';
-import { AppState } from './types';
+import getAsyncRoutes from '@/api/iam/routes';
+import {
+  transformIamMenuRoutes,
+  resetIamRouteRegistration,
+  type IamMenuRoute,
+} from '@/router/utils/iam-routes';
+import type { AppState } from './types';
+
+const defaultState = {
+  ...defaultSettings,
+  serverMenuRaw: [] as IamMenuRoute[],
+};
 
 const useAppStore = defineStore('app', {
-  state: (): AppState => ({ ...defaultSettings }),
+  state: (): AppState => ({ ...defaultState }),
 
   getters: {
     appCurrentSetting(state: AppState): AppState {
@@ -45,6 +55,10 @@ const useAppStore = defineStore('app', {
       this.hideMenu = value;
     },
     async fetchServerMenuConfig() {
+      if (this.serverMenu.length) {
+        return this.serverMenuRaw;
+      }
+
       let notifyInstance: NotificationReturn | null = null;
       try {
         notifyInstance = Notification.info({
@@ -52,13 +66,21 @@ const useAppStore = defineStore('app', {
           content: 'loading',
           closable: true,
         });
-        const { data } = await getMenuList();
-        this.serverMenu = data;
+        const { data } = await getAsyncRoutes();
+        const routes = (Array.isArray(data) ? data : []) as IamMenuRoute[];
+        if (!routes.length) {
+          throw new Error('empty server menu');
+        }
+        this.serverMenu = transformIamMenuRoutes(
+          routes
+        ) as unknown as RouteRecordNormalized[];
+        this.serverMenuRaw = routes;
         notifyInstance = Notification.success({
           id: 'menuNotice',
           content: 'success',
           closable: true,
         });
+        return routes;
       } catch (error) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         notifyInstance = Notification.error({
@@ -66,10 +88,13 @@ const useAppStore = defineStore('app', {
           content: 'error',
           closable: true,
         });
+        return null;
       }
     },
     clearServerMenu() {
       this.serverMenu = [];
+      this.serverMenuRaw = [];
+      resetIamRouteRegistration();
     },
   },
 });

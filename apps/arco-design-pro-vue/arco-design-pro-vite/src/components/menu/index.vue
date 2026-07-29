@@ -89,21 +89,27 @@
           appStore.updateSettings({ menuCollapse: val });
       };
 
+      const getMenuTitle = (meta?: RouteMeta) => {
+        if (meta?.locale) return t(meta.locale);
+        return (meta as RouteMeta & { title?: string })?.title || '';
+      };
+      const renderMenuIcon = (icon?: string) => {
+        if (!icon || icon.startsWith('ep:')) return null;
+        return () => h(compile(`<${icon}/>`));
+      };
+
       const renderSubMenu = () => {
         function travel(_route: RouteRecordRaw[], nodes = []) {
           if (_route) {
             _route.forEach((element) => {
-              // This is demo, modify nodes as needed
-              const icon = element?.meta?.icon
-                ? () => h(compile(`<${element?.meta?.icon}/>`))
-                : null;
+              const icon = renderMenuIcon(element?.meta?.icon as string);
               const node =
                 element?.children && element?.children.length !== 0 ? (
                   <a-sub-menu
                     key={element?.name}
                     v-slots={{
                       icon,
-                      title: () => h(compile(t(element?.meta?.locale || ''))),
+                      title: () => getMenuTitle(element?.meta as RouteMeta),
                     }}
                   >
                     {travel(element?.children)}
@@ -114,7 +120,7 @@
                     v-slots={{ icon }}
                     onClick={() => goto(element)}
                   >
-                    {t(element?.meta?.locale || '')}
+                    {getMenuTitle(element?.meta as RouteMeta)}
                   </a-menu-item>
                 );
               nodes.push(node as never);

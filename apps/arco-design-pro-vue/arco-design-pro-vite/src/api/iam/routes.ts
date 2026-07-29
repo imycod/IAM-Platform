@@ -7,7 +7,7 @@ type Result = {
   data: Array<any>;
 };
 
-export const getAsyncRoutes = () => {
+export default function getAsyncRoutes() {
   return http
     .request<Result>('get', '/api/portal/get-async-routes', {
       params: { appCode: IAM_APP_CODE },
@@ -16,4 +16,4 @@ export const getAsyncRoutes = () => {
       const routes = unwrapPortalResponse<Array<any>>(body);
       return { success: true, data: routes } as Result;
     });
-};
+}

@@ -10,6 +10,7 @@ const EXCEPTION: AppRouteRecordRaw = {
     requiresAuth: true,
     icon: 'icon-exclamation-circle',
     order: 6,
+    hideInMenu: true,
   },
   children: [
     {

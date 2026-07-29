@@ -1,10 +1,56 @@
-import type { Router, RouteRecordNormalized } from 'vue-router';
+import type {
+  Router,
+  RouteLocationNormalized,
+  RouteRecordNormalized,
+} from 'vue-router';
 import NProgress from 'nprogress'; // progress bar
 
 import usePermission from '@/hooks/permission';
 import { useUserStore, useAppStore } from '@/store';
 import { appRoutes } from '../routes';
 import { WHITE_LIST, NOT_FOUND } from '../constants';
+import { findFirstLeafRoute, registerIamRoutes } from '../utils/iam-routes';
+
+function isWhiteListRoute(name?: string | symbol | null) {
+  return WHITE_LIST.some((el) => el.name === name);
+}
+
+function existsInServerMenu(
+  menus: RouteRecordNormalized[],
+  to: RouteLocationNormalized
+) {
+  const stack = [...menus];
+  while (stack.length) {
+    const element = stack.shift();
+    if (element?.name === to.name || element?.path === to.path) {
+      return true;
+    }
+    if (element?.children?.length) {
+      stack.push(...(element.children as RouteRecordNormalized[]));
+    }
+  }
+  return false;
+}
+
+function resolveServerMenuTarget(
+  menus: RouteRecordNormalized[],
+  to: RouteLocationNormalized
+) {
+  if (isWhiteListRoute(to.name)) {
+    return to;
+  }
+
+  if (existsInServerMenu(menus, to)) {
+    return { ...to, replace: true };
+  }
+
+  const firstLeaf = findFirstLeafRoute(menus);
+  if (firstLeaf) {
+    return { name: firstLeaf.name, replace: true };
+  }
+
+  return NOT_FOUND;
+}
 
 export default function setupPermissionGuard(router: Router) {
   router.beforeEach(async (to, from, next) => {
@@ -12,44 +58,39 @@ export default function setupPermissionGuard(router: Router) {
     const userStore = useUserStore();
     const Permission = usePermission();
     const permissionsAllow = Permission.accessRouter(to);
+
     if (appStore.menuFromServer) {
-      // 针对来自服务端的菜单配置进行处理
-      // Handle routing configuration from the server
-
-      // 根据需要自行完善来源于服务端的菜单配置的permission逻辑
-      // Refine the permission logic from the server's menu configuration as needed
-      if (
-        !appStore.appAsyncMenus.length &&
-        !WHITE_LIST.find((el) => el.name === to.name)
-      ) {
-        await appStore.fetchServerMenuConfig();
-      }
-      const serverMenuConfig = [...appStore.appAsyncMenus, ...WHITE_LIST];
-
-      let exist = false;
-      while (serverMenuConfig.length && !exist) {
-        const element = serverMenuConfig.shift();
-        if (element?.name === to.name) exist = true;
-
-        if (element?.children) {
-          serverMenuConfig.push(
-            ...(element.children as unknown as RouteRecordNormalized[])
-          );
+      if (!isWhiteListRoute(to.name)) {
+        const routes = await appStore.fetchServerMenuConfig();
+        if (!routes?.length) {
+          next(NOT_FOUND);
+          return;
         }
+        registerIamRoutes(router, routes);
       }
+
+      if (isWhiteListRoute(to.name)) {
+        next();
+        return;
+      }
+
+      const exist = existsInServerMenu(appStore.appAsyncMenus, to);
       if (exist && permissionsAllow) {
         next();
-      } else next(NOT_FOUND);
-    } else {
-      // eslint-disable-next-line no-lonely-if
-      if (permissionsAllow) next();
-      else {
-        const destination =
-          Permission.findFirstPermissionRoute(appRoutes, userStore.role) ||
-          NOT_FOUND;
-        next(destination);
+      } else if (appStore.appAsyncMenus.length) {
+        next(resolveServerMenuTarget(appStore.appAsyncMenus, to));
+      } else {
+        next(NOT_FOUND);
       }
+    } else if (permissionsAllow) {
+      next();
+    } else {
+      const destination =
+        Permission.findFirstPermissionRoute(appRoutes, userStore.role) ||
+        NOT_FOUND;
+      next(destination);
     }
+
     NProgress.done();
   });
 }

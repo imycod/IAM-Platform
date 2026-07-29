@@ -10,6 +10,7 @@ const USER: AppRouteRecordRaw = {
     icon: 'icon-user',
     requiresAuth: true,
     order: 7,
+    hideInMenu: true,
   },
   children: [
     {

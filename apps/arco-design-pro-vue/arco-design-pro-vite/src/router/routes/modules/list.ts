@@ -10,6 +10,7 @@ const LIST: AppRouteRecordRaw = {
     requiresAuth: true,
     icon: 'icon-list',
     order: 2,
+    hideInMenu: true,
   },
   children: [
     {

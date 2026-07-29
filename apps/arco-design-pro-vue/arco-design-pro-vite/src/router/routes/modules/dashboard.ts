@@ -10,6 +10,7 @@ const DASHBOARD: AppRouteRecordRaw = {
     requiresAuth: true,
     icon: 'icon-dashboard',
     order: 0,
+    hideInMenu: true,
   },
   children: [
     {

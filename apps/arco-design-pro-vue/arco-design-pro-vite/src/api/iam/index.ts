@@ -18,4 +18,4 @@ export * from './permission';
 export * from './portal-user';
 export * from './resource';
 export * from './role';
-export * from './routes';
+export { default as getAsyncRoutes } from './routes';

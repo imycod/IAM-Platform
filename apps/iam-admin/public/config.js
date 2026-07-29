@@ -2,7 +2,10 @@
 (function () {
   const host = location.hostname;
   const isLocalHost = host === "localhost" || host === "127.0.0.1";
-  const cookieSuffix = isLocalHost ? "-" + (location.port || "80") : "";
+  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(host);
+  // Cookie 不区分端口：局域网 IP 多 SPA（9445/9446）须按端口隔离
+  const cookieSuffix =
+    isLocalHost || isLanIp ? "-" + (location.port || "80") : "";
   window.IAM_APP_COOKIE_KEYS = {
     token: "authorized-token" + cookieSuffix,
     multipleTabs: "multiple-tabs" + cookieSuffix
@@ -33,7 +36,6 @@
   }
 
   // NAS 局域网：iam-admin 固定走 :9446（admin 容器 Nginx 反代 /api + /oidc）
-  const isLanIp = /^\d+\.\d+\.\d+\.\d+$/.test(host);
   if (isLanIp) {
     const adminOrigin = "http://" + host + ":9446";
     window.IAM_CLIENT_CONFIG = {

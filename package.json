@@ -38,6 +38,10 @@
     "seed:iam-admin-security": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/iam-admin-security-data.ts",
     "seed:assign-iam-admin-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/assign-iam-admin-admin-role.ts",
     "seed:oauth-iam-admin": "ts-node -r tsconfig-paths/register apps/iam/src/database/seeds/oauth-iam-admin.ts",
+    "oidc:jwks:generate": "node scripts/generate-oidc-jwks.js",
+    "oidc:jwks:rotate": "node scripts/generate-oidc-jwks.js --rotate",
+    "oidc:jwks:promote": "node scripts/generate-oidc-jwks.js --promote",
+    "oidc:jwks:public": "node scripts/generate-oidc-jwks.js --public",
     "flow-admin:dev": "node apps/flow-admin/server.js"
   },
   "dependencies": {

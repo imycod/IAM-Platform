@@ -48,6 +48,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY --from=deps-iam /app/node_modules ./node_modules
 COPY --from=build-iam /app/dist ./dist
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY scripts/generate-oidc-jwks.js ./scripts/generate-oidc-jwks.js
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
   && chmod +x /usr/local/bin/docker-entrypoint.sh
 

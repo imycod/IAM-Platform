@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Length } from 'class-validator';
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
 
 export class CreateApplicationDto {
   @IsString()
@@ -12,6 +12,12 @@ export class CreateApplicationDto {
   @IsOptional()
   @IsString()
   type?: string;
+
+  /** 不传时实体默认 active */
+  @IsOptional()
+  @IsString()
+  @IsIn(['active', 'inactive', 'disabled'])
+  status?: string;
 
   @IsOptional()
   @IsString()

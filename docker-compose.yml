@@ -21,6 +21,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-iam}
       TZ: Asia/Shanghai
+    command:
+      - --default-time-zone=+08:00
     ports:
       - "${MYSQL_PUBLISH_PORT:-3308}:3306"
     volumes:
@@ -67,6 +69,7 @@ services:
       APP_PORT: ${APP_PORT:-3000}
       APP_GLOBAL_PREFIX: api
       IAM_INTERACTION_UI_DIR: /app/dist/apps/iam/src/assets/interaction
+      OIDC_JWKS_FILE: ${OIDC_JWKS_FILE:-/app/secrets/oidc-jwks.json}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-root}
@@ -74,6 +77,8 @@ services:
       DB_DATABASE: ${DB_DATABASE:-iam}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    volumes:
+      - iam_oidc_jwks:/app/secrets
     ports:
       - "${IAM_PUBLISH_PORT:-3000}:3000"
     healthcheck:
@@ -123,3 +128,4 @@ services:
 volumes:
   iam_mysql_data:
   iam_redis_data:
+  iam_oidc_jwks:

@@ -71,6 +71,15 @@ services:
 
 ```
 
+## jwks
+ 
+```bash
+pnpm oidc:jwks:generate   # 生成私钥 JWKS
+pnpm oidc:jwks:rotate     # 末尾追加新钥 → 重启（可验、尚未签发）
+pnpm oidc:jwks:promote    # 新钥提到首位 → 再重启（开始签发）
+pnpm oidc:jwks:public     # 打印公钥 JWKS
+```
+
 ## Changelogs
 
 v2.0.0 （release）

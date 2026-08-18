@@ -42,6 +42,7 @@
     "oidc:jwks:rotate": "node scripts/generate-oidc-jwks.js --rotate",
     "oidc:jwks:promote": "node scripts/generate-oidc-jwks.js --promote",
     "oidc:jwks:public": "node scripts/generate-oidc-jwks.js --public",
+    "backup": "node backup.js",
     "flow-admin:dev": "node apps/flow-admin/server.js"
   },
   "dependencies": {

@@ -12,3 +12,4 @@
 **/*.spec.ts
 apps/iam-admin/node_modules
 apps/iam-admin/dist
+apps/iam-admin/pnpm-workspace.yaml

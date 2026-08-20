@@ -37,7 +37,10 @@ RUN pnpm build:iam
 # ── 构建 iam-admin 前端 ───────────────────────────────────────
 FROM deps-admin AS build-admin
 COPY apps/iam-admin ./
-RUN pnpm build
+# iam-admin 的 pnpm-workspace.yaml 只有 pnpm 10 的 allowBuilds，没有 packages。
+# 镜像里是 pnpm 9，会报 packages field missing or empty
+RUN rm -f pnpm-workspace.yaml \
+  && pnpm build
 
 # ── IAM 运行镜像 ───────────────────────────────────────────────
 FROM base AS runtime
